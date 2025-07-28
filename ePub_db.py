@@ -2360,6 +2360,47 @@ def get_font_folder():
         print(f"폰트 폴더 조회 중 오류: {str(e)}")
         return None
 
+def update_punctuation_regex_data():
+    """PunctuationRegex 테이블의 데이터를 새로운 패턴으로 업데이트합니다."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        # 기존 데이터 삭제
+        cursor.execute("DELETE FROM PunctuationRegex")
+
+        # 새로운 데이터 삽입
+        new_punctuation_regex = [
+            ("'...' (Single Quotes)", r"[''](.*?)['']", "작은 따옴표로 감싸진 텍스트"),
+            ('"..." (Double Quotes)', r'[""](.*?)[""]', "큰 따옴표로 감싸진 텍스트"),
+            ("-... (Starts with Dash)", r"^[-–—―](.*)", "대시로 시작하는 텍스트"),
+            ("└... (Starts with Box Drawing Character)", r"└(.*)", "박스 그리기 문자로 시작하는 텍스트"),
+            ("(...) (Parentheses)", r"\((.*?)\)", "소괄호로 감싸진 텍스트"),
+            ("[...] (Square Brackets)", r"\[(.*?)\]", "대괄호로 감싸진 텍스트"),
+            ("{...} (Curly Braces)", r"\{(.*?)\}", "중괄호로 감싸진 텍스트"),
+            ("<...> (Angle Brackets)", r"<([^<>]*)>", "꺾쇠괄호로 감싸진 텍스트"),
+            ("「...」 (Japanese Brackets)", r"「(.*?)」", "일본어 괄호로 감싸진 텍스트"),
+            ("『...』 (Japanese Bold Brackets)", r"『(.*?)』", "일본어 굵은 괄호로 감싸진 텍스트"),
+            ("【...】 (Japanese Square Brackets)", r"【(.*?)】", "일본어 대괄호로 감싸진 텍스트"),
+            ("《...》 (Chinese Angle Brackets)", r"《(.*?)》", "중국어 꺾쇠괄호로 감싸진 텍스트"),
+            ("（...） (Chinese Parentheses)", r"（(.*?)）", "중국어 소괄호로 감싸진 텍스트")
+        ]
+
+        cursor.executemany("""
+            INSERT INTO PunctuationRegex (name, pattern, description) VALUES (?, ?, ?)
+        """, new_punctuation_regex)
+
+        conn.commit()
+        conn.close()
+        print(f"PunctuationRegex 데이터 업데이트 완료: {len(new_punctuation_regex)}개 항목")
+        return True, f"{len(new_punctuation_regex)}개 항목이 업데이트되었습니다."
+
+    except Exception as e:
+        print(f"PunctuationRegex 데이터 업데이트 실패: {str(e)}")
+        return False, f"업데이트 실패: {str(e)}"
+
 if __name__ == "__main__":
     initialize_database()
     initialize_css_themes()
+    # 괄호 정규식 데이터 업데이트
+    update_punctuation_regex_data()

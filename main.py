@@ -1,3 +1,27 @@
+"""
+ePub 텍스트 변환기 - Python 기반 텍스트 파일을 ePub 파일로 변환하는 GUI 프로그램
+
+프로젝트 개요:
+- 목적: 텍스트 파일을 완전한 ePub 형식으로 변환
+- 주요 기능:
+  * 텍스트 파일 인코딩 자동 감지 및 UTF-8 변환
+  * 정규식을 통한 챕터 자동 검출
+  * 커버 이미지 및 챕터별 삽화 지원
+  * 폰트 설정 및 호환성 검사
+  * 텍스트 스타일 및 정렬 옵션
+  * 완전한 ePub 3.0 표준 지원 (목차, 메타데이터, 스타일시트 포함)
+
+사용 기술:
+- Python 3.10+
+- PyQt6 (GUI 프레임워크)
+- SQLite (설정 및 데이터 저장)
+- chardet (텍스트 인코딩 감지)
+- zipfile (ePub 패키징)
+
+작성자: ePub Python Team
+최종 수정일: 2025-07-28
+"""
+
 import sys
 import os
 import re
@@ -6,10 +30,12 @@ import urllib.parse
 import webbrowser
 import tempfile
 import shutil
+import logging
 from pathlib import Path
 import zipfile
 import uuid
 from datetime import datetime
+from functools import partial
 
 # PyQt6 Core
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
@@ -27,7 +53,7 @@ from PyQt6.QtWidgets import (
 from ePub_ui import Ui_MainWindow  # pyuic6 -o ePub_ui.py 250714.ui
 
 # DB
-from ePub_db import initialize_database
+from ePub_db import initialize_database, update_punctuation_regex_data
 
 # Loader (DB 관련 기능들)
 from ePub_loader import (
@@ -53,44 +79,114 @@ from PyQt6.QtWidgets import QMenu
 
 # 메인 윈도우 클래스
 class MainWindow(QMainWindow):
+    """
+    ePub 변환기의 메인 윈도우 클래스
+
+    주요 기능:
+    - GUI 초기화 및 이벤트 처리
+    - 텍스트 파일 로딩 및 인코딩 처리
+    - 챕터 검색 및 ePub 변환
+    - 폰트 및 이미지 관리
+    """
+
     def __init__(self):
+        """
+        메인 윈도우 초기화
+
+        GUI 요소 설정, 이벤트 연결, 로깅 설정 등을 수행합니다.
+        """
         super().__init__()
+
+        # 로깅 설정
+        self._setup_logging()
+
+        # 데이터베이스 초기화 및 괄호 정규식 업데이트
+        try:
+            success, message = update_punctuation_regex_data()
+            if success:
+                logging.info(f"괄호 정규식 데이터 업데이트 완료: {message}")
+            else:
+                logging.warning(f"괄호 정규식 데이터 업데이트 실패: {message}")
+        except Exception as e:
+            logging.error(f"괄호 정규식 데이터 업데이트 중 오류: {e}")
+
+        # UI 초기화
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.ui.tabWidget.setCurrentIndex(0)
         self.initialize_comboboxes()
         self.move_to_mouse_screen_and_resize()
 
-        # 정렬 콤보박스 초기화 확인 (디버그)
-        print("[DEBUG] 정렬 콤보박스 초기화 완료")
+        # 정렬 콤보박스 초기화 확인
+        logging.debug("정렬 콤보박스 초기화 완료")
         self.print_alignment_settings()
 
         # 버튼 이벤트 연결
-        self.ui.pushButton_SelectTextFile.clicked.connect(self.select_text_file)
-        self.ui.pushButton_SelectCoverImage.clicked.connect(self.select_cover_image)
-        self.ui.pushButton_DeleteCoverImage.clicked.connect(self.delete_cover_image)
-        self.ui.pushButton_SelectChapterImage.clicked.connect(self.select_chapter_image)
-        self.ui.pushButton_DeleteChapterImage.clicked.connect(self.delete_chapter_image)
-        self.ui.pushButton_FindChapterList.clicked.connect(self.find_chapter_list)
-        self.ui.pushButton_SelectBodyFont.clicked.connect(self.select_body_font)
-        self.ui.pushButton_SelectChapterFont.clicked.connect(self.select_chapter_font)
-        self.ui.pushButton_setFontFolder.clicked.connect(self.set_font_folder)
+        self._connect_button_events()
 
-        # ePub 변환 버튼 연결
-        self.ui.pushButton_ePubGenerate.clicked.connect(self.convert_to_epub)
-
+        # 초기 설정
         self.move_to_mouse_screen()
+        self._initialize_workers()
+
+        # 클립보드 붙여넣기 단축키 설정
+        self.setup_clipboard_shortcuts()
+
+        # 이벤트 필터 설정
+        self.ui.label_CoverImage.installEventFilter(self)
+        self.ui.label_ChapterImage.installEventFilter(self)
+
+    def _setup_logging(self):
+        """
+        로깅 시스템 초기화
+
+        DEBUG 레벨까지 로깅하며, 콘솔과 파일 양쪽에 출력합니다.
+        """
+        try:
+            logging.basicConfig(
+                level=logging.DEBUG,
+                format='%(asctime)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
+                handlers=[
+                    logging.FileHandler('epub_converter.log', encoding='utf-8'),
+                    logging.StreamHandler(sys.stdout)
+                ]
+            )
+            logging.info("ePub 변환기 시작")
+        except Exception as e:
+            print(f"로깅 설정 실패: {e}")
+
+    def _connect_button_events(self):
+        """
+        모든 버튼 이벤트를 연결합니다.
+        """
+        try:
+            # 파일 선택 버튼들
+            self.ui.pushButton_SelectTextFile.clicked.connect(self.select_text_file)
+            self.ui.pushButton_SelectCoverImage.clicked.connect(self.select_cover_image)
+            self.ui.pushButton_DeleteCoverImage.clicked.connect(self.delete_cover_image)
+            self.ui.pushButton_SelectChapterImage.clicked.connect(self.select_chapter_image)
+            self.ui.pushButton_DeleteChapterImage.clicked.connect(self.delete_chapter_image)
+            self.ui.pushButton_FindChapterList.clicked.connect(self.find_chapter_list)
+            self.ui.pushButton_SelectBodyFont.clicked.connect(self.select_body_font)
+            self.ui.pushButton_SelectChapterFont.clicked.connect(self.select_chapter_font)
+            self.ui.pushButton_setFontFolder.clicked.connect(self.set_font_folder)
+
+            # ePub 변환 버튼
+            self.ui.pushButton_ePubGenerate.clicked.connect(self.convert_to_epub)
+
+            logging.debug("버튼 이벤트 연결 완료")
+        except Exception as e:
+            logging.error(f"버튼 이벤트 연결 실패: {e}")
+
+    def _initialize_workers(self):
+        """
+        백그라운드 워커 객체들을 초기화합니다.
+        """
         self.encoding_worker = None
         self.font_checker_worker = None
         self.font_progress_dialog = None
         self.chapter_finder_worker = None
         self.chapter_progress_dialog = None
-
-        # 클립보드 붙여넣기 단축키 설정
-        self.setup_clipboard_shortcuts()
-
-        self.ui.label_CoverImage.installEventFilter(self)
-        self.ui.label_ChapterImage.installEventFilter(self)
+        logging.debug("워커 객체 초기화 완료")
 
     def setup_clipboard_shortcuts(self):
         """클립보드 붙여넣기 키보드 단축키를 설정합니다."""
@@ -298,6 +394,9 @@ class MainWindow(QMainWindow):
         # 색상 LineEdit 초기화
         self.initialize_color_lineedits()
 
+        # 문자 스타일 기능 초기화
+        self.initialize_character_styling()
+
         # 폰트 콤보박스 초기화
         self.initialize_font_comboboxes()
 
@@ -346,7 +445,7 @@ class MainWindow(QMainWindow):
             combo = getattr(self.ui, combo_name)
             display_text = combo.currentText()
             code_value = combo.currentData()
-            print(f"[INFO] {combo_name} 정렬 변경: '{display_text}' -> 코드: '{code_value}'")
+            logging.info(f"{combo_name} 정렬 변경: '{display_text}' -> 코드: '{code_value}'")
 
     def initialize_weight_comboboxes(self):
         """폰트 굵기 콤보박스들을 초기화합니다."""
@@ -388,7 +487,7 @@ class MainWindow(QMainWindow):
             combo = getattr(self.ui, combo_name)
             display_text = combo.currentText()
             code_value = combo.currentData()
-            print(f"[INFO] {combo_name} 굵기 변경: '{display_text}' -> 코드: '{code_value}'")
+            logging.info(f"{combo_name} 굵기 변경: '{display_text}' -> 코드: '{code_value}'")
 
     def initialize_style_comboboxes(self):
         """스타일 콤보박스들을 초기화합니다."""
@@ -429,7 +528,7 @@ class MainWindow(QMainWindow):
             combo = getattr(self.ui, combo_name)
             display_text = combo.currentText()
             code_value = combo.currentData()
-            print(f"[INFO] {combo_name} 스타일 변경: '{display_text}' -> 코드: '{code_value}'")
+            logging.info(f"{combo_name} 스타일 변경: '{display_text}' -> 코드: '{code_value}'")
 
     def initialize_color_lineedits(self):
         """색상 LineEdit들을 초기화하고 클릭 이벤트를 연결합니다."""
@@ -494,7 +593,7 @@ class MainWindow(QMainWindow):
             if color.isValid():
                 color_hex = color.name()  # #rrggbb 형식으로 반환 (소문자)
                 self.set_color_to_lineedit(lineedit, color_hex)
-                print(f"[INFO] {lineedit_name} 색상 변경: {color_hex}")
+                logging.info(f"{lineedit_name} 색상 변경: {color_hex}")
 
     def get_alignment_setting(self, combobox_name):
         """정렬 콤보박스에서 현재 선택된 값(코드)을 반환합니다."""
@@ -661,84 +760,92 @@ class MainWindow(QMainWindow):
         return colors
 
     def print_alignment_settings(self):
-        """현재 정렬, 굵기, 스타일, 색상 설정들을 출력합니다. (디버그용)"""
-        print("=== 현재 정렬, 굵기, 스타일, 색상 설정 ===")
+        """
+        현재 정렬, 굵기, 스타일, 색상 설정들을 디버그 로그로 출력합니다.
 
-        # 모든 문자 정렬 설정 출력
-        chars_alignments = self.get_all_chars_alignments()
-        print("문자 정렬 설정:")
-        for i, alignment in chars_alignments.items():
-            combo_name = f'comboBox_CharsAlign{i}'
-            if hasattr(self.ui, combo_name):
-                combo = getattr(self.ui, combo_name)
-                display_text = combo.currentText()
-                print(f"  CharsAlign{i}: '{display_text}' -> 코드: '{alignment}'")
+        디버그 모드에서만 활성화되며, 모든 UI 설정값을 로깅합니다.
+        """
+        try:
+            logging.debug("=== 현재 정렬, 굵기, 스타일, 색상 설정 ===")
 
-        # 모든 괄호 정렬 설정 출력
-        brackets_alignments = self.get_all_brackets_alignments()
-        print("괄호 정렬 설정:")
-        for i, alignment in brackets_alignments.items():
-            combo_name = f'comboBox_BracketsAlign{i}'
-            if hasattr(self.ui, combo_name):
-                combo = getattr(self.ui, combo_name)
-                display_text = combo.currentText()
-                print(f"  BracketsAlign{i}: '{display_text}' -> 코드: '{alignment}'")
+            # 모든 문자 정렬 설정 출력
+            chars_alignments = self.get_all_chars_alignments()
+            logging.debug("문자 정렬 설정:")
+            for i, alignment in chars_alignments.items():
+                combo_name = f'comboBox_CharsAlign{i}'
+                if hasattr(self.ui, combo_name):
+                    combo = getattr(self.ui, combo_name)
+                    display_text = combo.currentText()
+                    logging.debug(f"  CharsAlign{i}: '{display_text}' -> 코드: '{alignment}'")
 
-        # 모든 문자 굵기 설정 출력
-        chars_weights = self.get_all_chars_weights()
-        print("문자 굵기 설정:")
-        for i, weight in chars_weights.items():
-            combo_name = f'comboBox_CharsWeight{i}'
-            if hasattr(self.ui, combo_name):
-                combo = getattr(self.ui, combo_name)
-                display_text = combo.currentText()
-                print(f"  CharsWeight{i}: '{display_text}' -> 코드: '{weight}'")
+            # 모든 괄호 정렬 설정 출력
+            brackets_alignments = self.get_all_brackets_alignments()
+            logging.debug("괄호 정렬 설정:")
+            for i, alignment in brackets_alignments.items():
+                combo_name = f'comboBox_BracketsAlign{i}'
+                if hasattr(self.ui, combo_name):
+                    combo = getattr(self.ui, combo_name)
+                    display_text = combo.currentText()
+                    logging.debug(f"  BracketsAlign{i}: '{display_text}' -> 코드: '{alignment}'")
 
-        # 모든 괄호 굵기 설정 출력
-        brackets_weights = self.get_all_brackets_weights()
-        print("괄호 굵기 설정:")
-        for i, weight in brackets_weights.items():
-            combo_name = f'comboBox_BracketsWeight{i}'
-            if hasattr(self.ui, combo_name):
-                combo = getattr(self.ui, combo_name)
-                display_text = combo.currentText()
-                print(f"  BracketsWeight{i}: '{display_text}' -> 코드: '{weight}'")
+            # 모든 문자 굵기 설정 출력
+            chars_weights = self.get_all_chars_weights()
+            logging.debug("문자 굵기 설정:")
+            for i, weight in chars_weights.items():
+                combo_name = f'comboBox_CharsWeight{i}'
+                if hasattr(self.ui, combo_name):
+                    combo = getattr(self.ui, combo_name)
+                    display_text = combo.currentText()
+                    logging.debug(f"  CharsWeight{i}: '{display_text}' -> 코드: '{weight}'")
 
-        # 모든 문자 스타일 설정 출력
-        chars_styles = self.get_all_chars_styles()
-        print("문자 스타일 설정:")
-        for i, style in chars_styles.items():
-            combo_name = f'comboBox_CharsStyle{i}'
-            if hasattr(self.ui, combo_name):
-                combo = getattr(self.ui, combo_name)
-                display_text = combo.currentText()
-                print(f"  CharsStyle{i}: '{display_text}' -> 코드: '{style}'")
+            # 모든 괄호 굵기 설정 출력
+            brackets_weights = self.get_all_brackets_weights()
+            logging.debug("괄호 굵기 설정:")
+            for i, weight in brackets_weights.items():
+                combo_name = f'comboBox_BracketsWeight{i}'
+                if hasattr(self.ui, combo_name):
+                    combo = getattr(self.ui, combo_name)
+                    display_text = combo.currentText()
+                    logging.debug(f"  BracketsWeight{i}: '{display_text}' -> 코드: '{weight}'")
 
-        # 모든 괄호 스타일 설정 출력
-        brackets_styles = self.get_all_brackets_styles()
-        print("괄호 스타일 설정:")
-        for i, style in brackets_styles.items():
-            combo_name = f'comboBox_BracketsStyle{i}'
-            if hasattr(self.ui, combo_name):
-                combo = getattr(self.ui, combo_name)
-                display_text = combo.currentText()
-                print(f"  BracketsStyle{i}: '{display_text}' -> 코드: '{style}'")
+            # 모든 문자 스타일 설정 출력
+            chars_styles = self.get_all_chars_styles()
+            logging.debug("문자 스타일 설정:")
+            for i, style in chars_styles.items():
+                combo_name = f'comboBox_CharsStyle{i}'
+                if hasattr(self.ui, combo_name):
+                    combo = getattr(self.ui, combo_name)
+                    display_text = combo.currentText()
+                    logging.debug(f"  CharsStyle{i}: '{display_text}' -> 코드: '{style}'")
 
-        # 모든 문자 색상 설정 출력
-        chars_colors = self.get_all_chars_colors()
-        print("문자 색상 설정:")
-        for i, color in chars_colors.items():
-            lineedit_name = f'lineEdit_CharsColor{i}'
-            if hasattr(self.ui, lineedit_name):
-                print(f"  CharsColor{i}: '{color}'")
+            # 모든 괄호 스타일 설정 출력
+            brackets_styles = self.get_all_brackets_styles()
+            logging.debug("괄호 스타일 설정:")
+            for i, style in brackets_styles.items():
+                combo_name = f'comboBox_BracketsStyle{i}'
+                if hasattr(self.ui, combo_name):
+                    combo = getattr(self.ui, combo_name)
+                    display_text = combo.currentText()
+                    logging.debug(f"  BracketsStyle{i}: '{display_text}' -> 코드: '{style}'")
 
-        # 모든 괄호 색상 설정 출력
-        brackets_colors = self.get_all_brackets_colors()
-        print("괄호 색상 설정:")
-        for i, color in brackets_colors.items():
-            lineedit_name = f'lineEdit_BracketsColor{i}'
-            if hasattr(self.ui, lineedit_name):
-                print(f"  BracketsColor{i}: '{color}'")
+            # 모든 문자 색상 설정 출력
+            chars_colors = self.get_all_chars_colors()
+            logging.debug("문자 색상 설정:")
+            for i, color in chars_colors.items():
+                lineedit_name = f'lineEdit_CharsColor{i}'
+                if hasattr(self.ui, lineedit_name):
+                    logging.debug(f"  CharsColor{i}: '{color}'")
+
+            # 모든 괄호 색상 설정 출력
+            brackets_colors = self.get_all_brackets_colors()
+            logging.debug("괄호 색상 설정:")
+            for i, color in brackets_colors.items():
+                lineedit_name = f'lineEdit_BracketsColor{i}'
+                if hasattr(self.ui, lineedit_name):
+                    logging.debug(f"  BracketsColor{i}: '{color}'")
+
+        except Exception as e:
+            logging.error(f"설정값 출력 중 오류 발생: {e}")
 
     def apply_text_alignment(self, text, alignment_code):
         """
@@ -872,84 +979,257 @@ class MainWindow(QMainWindow):
 
     # ePub 변환 관련 메서드들을 추가합니다
     def convert_to_epub(self):
-        """설정된 정보를 기반으로 ePub 파일을 생성합니다."""
-        if not self.validate_epub_requirements():
-            return
+        """
+        설정된 정보를 기반으로 ePub 파일을 생성합니다.
 
-        save_path, _ = QFileDialog.getSaveFileName(
-            self, "ePub 파일 저장", f"{self.ui.lineEdit_Title.text()}.epub",
-            "ePub Files (*.epub);;All Files (*)"
-        )
+        주요 과정:
+        1. 필수 요구사항 검증 (텍스트 파일, 제목 등)
+        2. 저장 경로 선택
+        3. ePub 파일 생성
+        4. 결과 알림
 
-        if not save_path:
-            return
+        Returns:
+            None
 
+        Raises:
+            FileNotFoundError: 텍스트 파일이 존재하지 않을 때
+            PermissionError: 파일 쓰기 권한이 없을 때
+            Exception: ePub 생성 중 기타 오류 발생 시
+        """
         try:
+            logging.info("ePub 변환 시작")
+
+            # 필수 요구사항 검증
+            if not self.validate_epub_requirements():
+                logging.warning("ePub 변환 요구사항 검증 실패")
+                return
+
+            # 저장 경로 선택
+            default_filename = f"{self.ui.lineEdit_Title.text().strip()}.epub"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, "ePub 파일 저장", default_filename,
+                "ePub Files (*.epub);;All Files (*)"
+            )
+
+            if not save_path:
+                logging.info("사용자가 저장을 취소함")
+                return
+
+            logging.info(f"ePub 저장 경로: {save_path}")
+
+            # ePub 파일 생성
             self.create_epub_file(save_path)
-            QMessageBox.information(self, "변환 완료", f"ePub 파일이 성공적으로 생성되었습니다:\n{save_path}")
+
+            QMessageBox.information(
+                self, "변환 완료",
+                f"ePub 파일이 성공적으로 생성되었습니다:\n{save_path}"
+            )
+            logging.info(f"ePub 변환 완료: {save_path}")
+
+        except PermissionError as e:
+            error_msg = f"파일 쓰기 권한이 없습니다: {str(e)}"
+            QMessageBox.critical(self, "권한 오류", error_msg)
+            logging.error(error_msg)
+        except FileNotFoundError as e:
+            error_msg = f"필요한 파일을 찾을 수 없습니다: {str(e)}"
+            QMessageBox.critical(self, "파일 오류", error_msg)
+            logging.error(error_msg)
         except Exception as e:
-            QMessageBox.critical(self, "변환 실패", f"ePub 변환 중 오류가 발생했습니다:\n{str(e)}")
+            error_msg = f"ePub 변환 중 오류가 발생했습니다: {str(e)}"
+            QMessageBox.critical(self, "변환 실패", error_msg)
+            logging.error(error_msg)
 
     def validate_epub_requirements(self):
-        """ePub 변환에 필요한 최소 요구사항을 검증합니다."""
-        text_file_path = self.ui.label_TextFilePath.text().strip()
-        if not text_file_path or not os.path.exists(text_file_path):
-            QMessageBox.warning(self, "변환 실패", "텍스트 파일이 선택되지 않았거나 존재하지 않습니다.")
-            return False
+        """
+        ePub 변환에 필요한 최소 요구사항을 검증합니다.
 
-        title = self.ui.lineEdit_Title.text().strip()
-        if not title:
-            QMessageBox.warning(self, "변환 실패", "제목을 입력해주세요.")
-            return False
+        검증 항목:
+        - 텍스트 파일 존재 여부
+        - 제목 입력 여부
+        - 챕터 리스트 (없을 경우 사용자 선택)
 
-        table = self.ui.tableWidget_ChapterList
-        if table.rowCount() == 0:
-            reply = QMessageBox.question(
-                self, "챕터 없음",
-                "챕터 리스트가 비어있습니다. 전체 텍스트를 하나의 챕터로 만들까요?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
-            if reply == QMessageBox.StandardButton.No:
+        Returns:
+            bool: 검증 통과 시 True, 실패 시 False
+        """
+        try:
+            logging.debug("ePub 변환 요구사항 검증 시작")
+
+            # 텍스트 파일 검증
+            text_file_path = self.ui.label_TextFilePath.text().strip()
+            if not text_file_path or not os.path.exists(text_file_path):
+                QMessageBox.warning(
+                    self, "변환 실패",
+                    "텍스트 파일이 선택되지 않았거나 존재하지 않습니다."
+                )
+                logging.warning(f"텍스트 파일 검증 실패: {text_file_path}")
                 return False
 
-        return True
+            # 제목 검증
+            title = self.ui.lineEdit_Title.text().strip()
+            if not title:
+                QMessageBox.warning(self, "변환 실패", "제목을 입력해주세요.")
+                logging.warning("제목이 입력되지 않음")
+                return False
+
+            # 챕터 리스트 검증
+            table = self.ui.tableWidget_ChapterList
+            if table.rowCount() == 0:
+                reply = QMessageBox.question(
+                    self, "챕터 없음",
+                    "챕터 리스트가 비어있습니다. 전체 텍스트를 하나의 챕터로 만들까요?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    logging.info("사용자가 단일 챕터 생성을 거부함")
+                    return False
+                else:
+                    logging.info("단일 챕터로 ePub 생성 예정")
+
+            logging.debug("ePub 변환 요구사항 검증 완료")
+            return True
+
+        except Exception as e:
+            logging.error(f"요구사항 검증 중 오류 발생: {e}")
+            return False
 
     def create_epub_file(self, save_path):
-        """실제 ePub 파일을 생성합니다."""
-        temp_dir = os.path.join(os.path.dirname(save_path), f"temp_epub_{uuid.uuid4().hex[:8]}")
-        os.makedirs(temp_dir, exist_ok=True)
+        """
+        실제 ePub 파일을 생성합니다.
+
+        주요 과정:
+        1. 기존 파일 백업 (존재하는 경우)
+        2. 임시 디렉토리 생성
+        3. ePub 구조 생성
+        4. ZIP 패키징
+        5. 임시 파일 정리
+
+        Args:
+            save_path (str): ePub 파일을 저장할 경로
+
+        Raises:
+            PermissionError: 파일 쓰기 권한이 없을 때
+            OSError: 디스크 공간 부족 등 시스템 오류
+        """
+        try:
+            logging.info(f"ePub 파일 생성 시작: {save_path}")
+
+            # 기존 파일 백업
+            backup_path = self._create_backup_if_exists(save_path)
+            if backup_path:
+                logging.info(f"기존 파일 백업 완료: {backup_path}")
+
+            # 임시 디렉토리 생성
+            temp_dir = os.path.join(os.path.dirname(save_path), f"temp_epub_{uuid.uuid4().hex[:8]}")
+            os.makedirs(temp_dir, exist_ok=True)
+            logging.debug(f"임시 디렉토리 생성: {temp_dir}")
+
+            try:
+                # ePub 구조 생성
+                self.create_epub_structure(temp_dir)
+
+                # ZIP 패키징
+                self.create_zip_epub(temp_dir, save_path)
+
+                logging.info(f"ePub 파일 생성 완료: {save_path}")
+
+            finally:
+                # 임시 디렉토리 정리
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+                    logging.debug(f"임시 디렉토리 삭제: {temp_dir}")
+
+        except Exception as e:
+            logging.error(f"ePub 파일 생성 중 오류 발생: {e}")
+            raise
+
+    def _create_backup_if_exists(self, file_path):
+        """
+        파일이 존재하는 경우 백업을 생성합니다.
+
+        Args:
+            file_path (str): 백업할 파일 경로
+
+        Returns:
+            str or None: 백업 파일 경로 (백업이 생성된 경우), 없으면 None
+        """
+        if not os.path.exists(file_path):
+            return None
 
         try:
-            self.create_epub_structure(temp_dir)
-            self.create_zip_epub(temp_dir, save_path)
-        finally:
-            import shutil
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+            # 백업 폴더 생성
+            backup_dir = os.path.join(os.path.dirname(file_path), "backup")
+            os.makedirs(backup_dir, exist_ok=True)
+
+            # 백업 파일명 생성 (YYYYMMDD_HHMMSS_원본파일명)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            original_name = os.path.basename(file_path)
+            backup_filename = f"{timestamp}_{original_name}"
+            backup_path = os.path.join(backup_dir, backup_filename)
+
+            # 백업 파일 복사
+            shutil.copy2(file_path, backup_path)
+            logging.info(f"파일 백업 생성: {file_path} -> {backup_path}")
+
+            return backup_path
+
+        except Exception as e:
+            logging.warning(f"백업 생성 실패 (계속 진행): {e}")
+            return None
 
     def create_epub_structure(self, temp_dir):
-        """ePub의 디렉토리 구조와 파일들을 생성합니다."""
-        meta_inf_dir = os.path.join(temp_dir, "META-INF")
-        oebps_dir = os.path.join(temp_dir, "OEBPS")
-        images_dir = os.path.join(oebps_dir, "Images")
-        styles_dir = os.path.join(oebps_dir, "Styles")
+        """
+        ePub의 디렉토리 구조와 파일들을 생성합니다.
 
-        for dir_path in [meta_inf_dir, oebps_dir, images_dir, styles_dir]:
-            os.makedirs(dir_path, exist_ok=True)
+        생성되는 구조:
+        - META-INF/container.xml
+        - OEBPS/content.opf (메타데이터)
+        - OEBPS/toc.ncx (목차)
+        - OEBPS/nav.xhtml (ePub 3.0 네비게이션)
+        - OEBPS/Styles/style.css (스타일시트)
+        - OEBPS/Images/ (이미지 파일들)
+        - OEBPS/chapter*.xhtml (챕터 파일들)
+        - mimetype (MIME 타입 정의)
 
-        self.create_mimetype_file(temp_dir)
-        self.create_container_xml(meta_inf_dir)
-        self.create_content_opf(oebps_dir)
-        self.create_toc_ncx(oebps_dir)
-        self.create_nav_xhtml(oebps_dir)  # ePub 3.0 네비게이션 파일 추가
-        self.create_stylesheet(styles_dir)
-        self.create_cover_page(oebps_dir)  # 커버 페이지 생성 추가
-        self.create_chapter_files(oebps_dir)
-        self.copy_images(images_dir)
+        Args:
+            temp_dir (str): ePub 구조를 생성할 임시 디렉토리 경로
+        """
+        try:
+            logging.debug("ePub 구조 생성 시작")
+
+            # 디렉토리 구조 생성
+            meta_inf_dir = os.path.join(temp_dir, "META-INF")
+            oebps_dir = os.path.join(temp_dir, "OEBPS")
+            images_dir = os.path.join(oebps_dir, "Images")
+            styles_dir = os.path.join(oebps_dir, "Styles")
+
+            for dir_path in [meta_inf_dir, oebps_dir, images_dir, styles_dir]:
+                os.makedirs(dir_path, exist_ok=True)
+
+            # ePub 필수 파일들 생성
+            self.create_mimetype_file(temp_dir)
+            self.create_container_xml(meta_inf_dir)
+            self.create_content_opf(oebps_dir)
+            self.create_toc_ncx(oebps_dir)
+            self.create_nav_xhtml(oebps_dir)  # ePub 3.0 네비게이션 파일
+            self.create_stylesheet(styles_dir)
+            self.create_cover_page(oebps_dir)  # 커버 페이지
+            self.create_chapter_files(oebps_dir)
+            self.copy_images(images_dir)
+
+            logging.debug("ePub 구조 생성 완료")
+
+        except Exception as e:
+            logging.error(f"ePub 구조 생성 중 오류 발생: {e}")
+            raise
 
     def create_mimetype_file(self, temp_dir):
-        """ePub의 mimetype 파일을 생성합니다."""
+        """
+        ePub의 mimetype 파일을 생성합니다.
+
+        Args:
+            temp_dir (str): mimetype 파일을 생성할 디렉토리
+        """
         with open(os.path.join(temp_dir, "mimetype"), 'w', encoding='utf-8') as f:
             f.write("application/epub+zip")
 
@@ -1412,11 +1692,29 @@ p {{
         chapters = self.get_chapter_info()
 
         for i, chapter in enumerate(chapters, 1):
-            content = chapter['content'].replace('\n', '</p>\n<p>').strip()
-            if content:
-                content = f'<p>{content}</p>'
+            try:
+                # 챕터 내용을 라인별로 분할
+                lines = chapter['content'].split('\n')
 
-            chapter_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
+                # 각 라인에 문자 스타일링 적용
+                styled_lines = self.apply_character_styling_to_text(lines)
+
+                # HTML 문단으로 변환
+                content_parts = []
+                for line in styled_lines:
+                    line = line.strip()
+                    if line:
+                        # 이미 HTML 스타일이 적용된 라인인지 확인
+                        if line.startswith('<div') and line.endswith('</div>'):
+                            # 이미 div로 감싸진 경우 그대로 사용
+                            content_parts.append(line)
+                        else:
+                            # 일반 텍스트인 경우 p 태그로 감싸기
+                            content_parts.append(f'<p>{line}</p>')
+
+                content = '\n'.join(content_parts) if content_parts else '<p></p>'
+
+                chapter_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -1429,8 +1727,33 @@ p {{
 </body>
 </html>'''
 
-            with open(os.path.join(oebps_dir, f"chapter{i}.xhtml"), 'w', encoding='utf-8') as f:
-                f.write(chapter_xhtml)
+                with open(os.path.join(oebps_dir, f"chapter{i}.xhtml"), 'w', encoding='utf-8') as f:
+                    f.write(chapter_xhtml)
+
+                logging.debug(f"챕터 {i} 파일 생성 완료 (문자 스타일링 적용)")
+
+            except Exception as e:
+                logging.error(f"챕터 {i} 파일 생성 실패: {e}")
+                # 오류 발생 시 기본 방식으로 생성
+                content = chapter['content'].replace('\n', '</p>\n<p>').strip()
+                if content:
+                    content = f'<p>{content}</p>'
+
+                chapter_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>{chapter['title']}</title>
+    <link rel="stylesheet" type="text/css" href="Styles/style.css"/>
+</head>
+<body>
+    <div class="chapter-title">{chapter['title']}</div>
+    {content}
+</body>
+</html>'''
+
+                with open(os.path.join(oebps_dir, f"chapter{i}.xhtml"), 'w', encoding='utf-8') as f:
+                    f.write(chapter_xhtml)
 
     def copy_images(self, images_dir):
         """선택된 이미지들을 ePub에 복사합니다."""
@@ -1476,61 +1799,89 @@ p {{
 
     # 기존 메서드들을 여기에 추가해야 합니다 (간략화를 위해 일부만 포함)
     def find_chapter_list(self):
-        # ✅ 테이블 초기화
-        table = self.ui.tableWidget_ChapterList
-        table.setRowCount(0)
-        table.setColumnCount(6)
-        table.setHorizontalHeaderLabels([
-            "적용", "목차 순서", "챕터 제목", "라인 번호", "삽화 선택", "삽화 경로"
-        ])
+        """
+        정규식을 사용하여 텍스트 파일에서 챕터 목록을 검색합니다.
 
-        # ✅ 열 너비 설정
-        table.setColumnWidth(0, 50)   # 적용
-        table.setColumnWidth(1, 70)   # 목차 순서
-        table.setColumnWidth(2, 300)  # 챕터 제목
-        table.setColumnWidth(5, 300)  # 삽화 경로
+        주요 기능:
+        - 테이블 위젯 초기화 및 설정
+        - 선택된 텍스트 파일 유효성 검사
+        - 체크된 정규식 패턴 수집
+        - 백그라운드 워커를 통한 챕터 검색 시작
 
-        # ✅ 중앙 정렬 설정
-        table.horizontalHeaderItem(0).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        table.horizontalHeaderItem(1).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # ✅ 스타일: 줄무늬 배경
-        table.setAlternatingRowColors(True)
-
-        # ✅ 텍스트 파일 경로 확인
-        file_path = self.ui.label_TextFilePath.text().strip()
-        if not file_path or not os.path.exists(file_path):
-            QMessageBox.warning(self, "오류", "텍스트 파일이 선택되지 않았거나 존재하지 않습니다.")
-            return
-
-        # ✅ 텍스트 파일 읽기 (UTF-8)
+        Raises:
+            FileNotFoundError: 텍스트 파일이 존재하지 않을 때
+            UnicodeDecodeError: 텍스트 파일 읽기 실패 시
+        """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            logging.info("챕터 목록 검색 시작")
+
+            # 테이블 초기화
+            table = self.ui.tableWidget_ChapterList
+            table.setRowCount(0)
+            table.setColumnCount(6)
+            table.setHorizontalHeaderLabels([
+                "적용", "목차 순서", "챕터 제목", "라인 번호", "삽화 선택", "삽화 경로"
+            ])
+
+            # 열 너비 설정
+            table.setColumnWidth(0, 50)   # 적용
+            table.setColumnWidth(1, 70)   # 목차 순서
+            table.setColumnWidth(2, 300)  # 챕터 제목
+            table.setColumnWidth(5, 300)  # 삽화 경로
+
+            # 중앙 정렬 설정
+            table.horizontalHeaderItem(0).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.horizontalHeaderItem(1).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            # 스타일: 줄무늬 배경
+            table.setAlternatingRowColors(True)
+
+            # 텍스트 파일 경로 확인
+            file_path = self.ui.label_TextFilePath.text().strip()
+            if not file_path or not os.path.exists(file_path):
+                QMessageBox.warning(self, "오류", "텍스트 파일이 선택되지 않았거나 존재하지 않습니다.")
+                logging.warning(f"유효하지 않은 텍스트 파일 경로: {file_path}")
+                return
+
+            # 텍스트 파일 읽기 (UTF-8)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                logging.debug(f"텍스트 파일 읽기 완료: {len(content)} 문자")
+            except Exception as e:
+                QMessageBox.critical(self, "파일 읽기 실패", str(e))
+                logging.error(f"텍스트 파일 읽기 실패: {e}")
+                return
+
+            # 체크된 정규식만 수집
+            selected_patterns = []
+            for i in range(1, 10):
+                cb = getattr(self.ui, f"checkBox_RegEx{i}")
+                cmb = getattr(self.ui, f"comboBox_RegEx{i}")
+                if cb.isChecked():
+                    pattern = cmb.currentData()
+                    if pattern:
+                        selected_patterns.append((i, pattern))
+
+            if not selected_patterns:
+                QMessageBox.information(self, "정규식 없음", "체크된 정규식이 없습니다.")
+                logging.warning("선택된 정규식 패턴이 없음")
+                return
+
+            logging.info(f"선택된 정규식 패턴 수: {len(selected_patterns)}")
+
+            # QThread로 백그라운드 작업 실행
+            self.chapter_worker = ChapterFinderWorker(content, selected_patterns)
+            self.chapter_worker.chapter_found.connect(self.add_chapter_row)  # 실시간 행 추가
+            self.chapter_worker.progress.connect(self.ui.progressBar.setValue)
+            self.chapter_worker.finished.connect(self.finish_chapter_search)
+            self.chapter_worker.start()
+
+            logging.info("챕터 검색 워커 시작")
+
         except Exception as e:
-            QMessageBox.critical(self, "파일 읽기 실패", str(e))
-            return
-
-        # ✅ 체크된 정규식만 수집
-        selected_patterns = []
-        for i in range(1, 10):
-            cb = getattr(self.ui, f"checkBox_RegEx{i}")
-            cmb = getattr(self.ui, f"comboBox_RegEx{i}")
-            if cb.isChecked():
-                pattern = cmb.currentData()
-                if pattern:
-                    selected_patterns.append((i, pattern))
-
-        if not selected_patterns:
-            QMessageBox.information(self, "정규식 없음", "체크된 정규식이 없습니다.")
-            return
-
-        # ✅ QThread로 백그라운드 작업 실행
-        self.chapter_worker = ChapterFinderWorker(content, selected_patterns)
-        self.chapter_worker.chapter_found.connect(self.add_chapter_row)  # 실시간 행 추가
-        self.chapter_worker.progress.connect(self.ui.progressBar.setValue)
-        self.chapter_worker.finished.connect(self.finish_chapter_search)
-        self.chapter_worker.start()
+            logging.error(f"챕터 목록 검색 중 오류 발생: {e}")
+            QMessageBox.critical(self, "오류", f"챕터 검색 중 오류가 발생했습니다:\n{str(e)}")
 
     def bind_regex_checkbox_events(self):
         """정규식 체크박스 이벤트를 바인딩합니다."""
@@ -1548,6 +1899,335 @@ p {{
         """정규식 체크박스 토글 이벤트 처리"""
         combo = getattr(self.ui, f"comboBox_RegEx{index}")
         combo.setEnabled(checked)
+
+    def initialize_character_styling(self):
+        """문자 스타일 기능을 초기화합니다."""
+        logging.debug("문자 스타일 기능 초기화 시작")
+
+        # checkBox_Chars1~7과 관련 컴포넌트들 이벤트 연결
+        for i in range(1, 8):
+            try:
+                # 체크박스 이벤트 연결
+                checkbox_name = f"checkBox_Chars{i}"
+                if hasattr(self.ui, checkbox_name):
+                    checkbox = getattr(self.ui, checkbox_name)
+                    checkbox.toggled.connect(partial(self.on_chars_checkbox_toggled, i))
+
+                # 색상 체크박스 이벤트 연결
+                color_checkbox_name = f"checkBox_CharsColor{i}"
+                if hasattr(self.ui, color_checkbox_name):
+                    color_checkbox = getattr(self.ui, color_checkbox_name)
+                    color_checkbox.toggled.connect(partial(self.on_chars_color_checkbox_toggled, i))
+
+                # 굵기 콤보박스 변경 이벤트 연결
+                weight_combo_name = f"comboBox_CharsWeight{i}"
+                if hasattr(self.ui, weight_combo_name):
+                    weight_combo = getattr(self.ui, weight_combo_name)
+                    weight_combo.currentTextChanged.connect(partial(self.on_chars_weight_changed, i))
+
+                # SpinBox 변경 이벤트 연결
+                spinbox_name = f"spinBox_CharsWeight{i}"
+                if hasattr(self.ui, spinbox_name):
+                    spinbox = getattr(self.ui, spinbox_name)
+                    spinbox.valueChanged.connect(partial(self.on_chars_weight_spinbox_changed, i))
+                    # 기본값 400으로 설정
+                    spinbox.setValue(400)
+
+                # 초기 컴포넌트 상태 설정
+                self.update_chars_components_state(i)
+
+                logging.debug(f"문자 스타일 {i}번 컴포넌트 초기화 완료")
+
+            except Exception as e:
+                logging.error(f"문자 스타일 {i}번 초기화 실패: {e}")
+
+        logging.debug("문자 스타일 기능 초기화 완료")
+
+    def on_chars_checkbox_toggled(self, index, checked):
+        """문자 체크박스 토글 이벤트 처리"""
+        logging.debug(f"문자 체크박스 {index} 토글: {checked}")
+        self.update_chars_components_state(index)
+
+    def on_chars_color_checkbox_toggled(self, index, checked):
+        """문자 색상 체크박스 토글 이벤트 처리"""
+        logging.debug(f"문자 색상 체크박스 {index} 토글: {checked}")
+        self.update_chars_components_state(index)
+
+    def on_chars_weight_changed(self, index, text):
+        """문자 굵기 콤보박스 변경 이벤트 처리"""
+        logging.debug(f"문자 굵기 {index} 변경: {text}")
+        self.update_chars_components_state(index)
+
+    def on_chars_weight_spinbox_changed(self, index, value):
+        """문자 굵기 SpinBox 변경 이벤트 처리"""
+        logging.debug(f"문자 굵기 SpinBox {index} 변경: {value}")
+
+    def update_chars_components_state(self, index):
+        """문자 관련 컴포넌트들의 활성화 상태를 업데이트합니다."""
+        try:
+            # 기본 체크박스 상태 확인
+            checkbox_name = f"checkBox_Chars{index}"
+            chars_enabled = False
+            if hasattr(self.ui, checkbox_name):
+                checkbox = getattr(self.ui, checkbox_name)
+                chars_enabled = checkbox.isChecked()
+
+            # 색상 체크박스 상태 확인
+            color_checkbox_name = f"checkBox_CharsColor{index}"
+            color_enabled = False
+            if hasattr(self.ui, color_checkbox_name):
+                color_checkbox = getattr(self.ui, color_checkbox_name)
+                color_enabled = color_checkbox.isChecked()
+
+            # 굵기 콤보박스에서 '직접입력' 선택 여부 확인
+            weight_combo_name = f"comboBox_CharsWeight{index}"
+            is_direct_input = False
+            if hasattr(self.ui, weight_combo_name):
+                weight_combo = getattr(self.ui, weight_combo_name)
+                current_data = weight_combo.currentData()
+                is_direct_input = (current_data == "Number")
+
+            # 각 컴포넌트 활성화/비활성화
+            component_names = [
+                f"lineEdit_Chars{index}",
+                f"comboBox_CharsAlign{index}",
+                f"comboBox_CharsWeight{index}",
+                f"comboBox_CharsStyle{index}"
+            ]
+
+            for comp_name in component_names:
+                if hasattr(self.ui, comp_name):
+                    component = getattr(self.ui, comp_name)
+                    component.setEnabled(chars_enabled)
+
+            # SpinBox는 굵기가 '직접입력'이고 체크박스가 활성화된 경우에만 활성화
+            spinbox_name = f"spinBox_CharsWeight{index}"
+            if hasattr(self.ui, spinbox_name):
+                spinbox = getattr(self.ui, spinbox_name)
+                spinbox.setEnabled(chars_enabled and is_direct_input)
+
+            # 색상 관련 컴포넌트는 색상 체크박스 상태에 따라 결정
+            color_lineedit_name = f"lineEdit_CharsColor{index}"
+            if hasattr(self.ui, color_lineedit_name):
+                color_lineedit = getattr(self.ui, color_lineedit_name)
+                color_lineedit.setEnabled(chars_enabled and color_enabled)
+
+        except Exception as e:
+            logging.error(f"문자 컴포넌트 {index} 상태 업데이트 실패: {e}")
+
+    def apply_character_styling_to_text(self, text_lines):
+        """
+        텍스트 라인들에 문자 스타일링을 적용합니다.
+
+        Args:
+            text_lines (list): 텍스트 라인들의 리스트
+
+        Returns:
+            list: 스타일이 적용된 텍스트 라인들
+        """
+        try:
+            styled_lines = []
+
+            for line in text_lines:
+                styled_line = line
+
+                # 각 문자 스타일 설정을 확인하고 적용
+                for i in range(1, 8):
+                    styled_line = self.apply_single_character_style(styled_line, i)
+
+                styled_lines.append(styled_line)
+
+            return styled_lines
+
+        except Exception as e:
+            logging.error(f"문자 스타일링 적용 실패: {e}")
+            return text_lines
+
+    def apply_single_character_style(self, line, index):
+        """
+        단일 문자 스타일을 라인에 적용합니다.
+
+        Args:
+            line (str): 대상 텍스트 라인
+            index (int): 문자 스타일 인덱스 (1-7)
+
+        Returns:
+            str: 스타일이 적용된 라인
+        """
+        try:
+            # 체크박스가 체크되어 있는지 확인
+            checkbox_name = f"checkBox_Chars{index}"
+            if not hasattr(self.ui, checkbox_name):
+                return line
+
+            checkbox = getattr(self.ui, checkbox_name)
+            if not checkbox.isChecked():
+                return line
+
+            # 타겟 문자열 가져오기
+            lineedit_name = f"lineEdit_Chars{index}"
+            if not hasattr(self.ui, lineedit_name):
+                return line
+
+            lineedit = getattr(self.ui, lineedit_name)
+            target_text = lineedit.text().strip()
+
+            if not target_text:
+                return line
+
+            # 완전히 일치하는 라인인지 확인
+            if line.strip() != target_text:
+                return line
+
+            logging.debug(f"문자 스타일 {index} 적용 대상 라인 발견: '{line.strip()}'")
+
+            # 스타일 정보 수집
+            style_info = self.get_character_style_info(index)
+
+            # HTML 스타일 적용
+            styled_line = self.apply_character_html_styles(line, style_info)
+
+            logging.debug(f"문자 스타일 {index} 적용 완료: '{styled_line}'")
+            return styled_line
+
+        except Exception as e:
+            logging.error(f"단일 문자 스타일 {index} 적용 실패: {e}")
+            return line
+
+    def get_character_style_info(self, index):
+        """
+        지정된 인덱스의 문자 스타일 정보를 수집합니다.
+
+        Args:
+            index (int): 문자 스타일 인덱스 (1-7)
+
+        Returns:
+            dict: 스타일 정보 딕셔너리
+        """
+        style_info = {
+            'alignment': None,
+            'weight': None,
+            'style': None,
+            'color': None,
+            'weight_value': None
+        }
+
+        try:
+            # 정렬 정보
+            align_combo_name = f"comboBox_CharsAlign{index}"
+            if hasattr(self.ui, align_combo_name):
+                align_combo = getattr(self.ui, align_combo_name)
+                style_info['alignment'] = align_combo.currentData()
+
+            # 굵기 정보
+            weight_combo_name = f"comboBox_CharsWeight{index}"
+            if hasattr(self.ui, weight_combo_name):
+                weight_combo = getattr(self.ui, weight_combo_name)
+                weight_data = weight_combo.currentData()
+
+                if weight_data == "Number":
+                    # 직접입력인 경우 SpinBox 값 사용
+                    spinbox_name = f"spinBox_CharsWeight{index}"
+                    if hasattr(self.ui, spinbox_name):
+                        spinbox = getattr(self.ui, spinbox_name)
+                        style_info['weight_value'] = spinbox.value()
+                else:
+                    style_info['weight'] = weight_data
+
+            # 스타일 정보
+            style_combo_name = f"comboBox_CharsStyle{index}"
+            if hasattr(self.ui, style_combo_name):
+                style_combo = getattr(self.ui, style_combo_name)
+                style_info['style'] = style_combo.currentData()
+
+            # 색상 정보 (색상 체크박스가 체크된 경우에만)
+            color_checkbox_name = f"checkBox_CharsColor{index}"
+            if hasattr(self.ui, color_checkbox_name):
+                color_checkbox = getattr(self.ui, color_checkbox_name)
+                if color_checkbox.isChecked():
+                    color_lineedit_name = f"lineEdit_CharsColor{index}"
+                    if hasattr(self.ui, color_lineedit_name):
+                        color_lineedit = getattr(self.ui, color_lineedit_name)
+                        color_value = color_lineedit.text().strip()
+                        if color_value and color_value.startswith('#'):
+                            style_info['color'] = color_value
+
+            logging.debug(f"문자 스타일 {index} 정보 수집: {style_info}")
+            return style_info
+
+        except Exception as e:
+            logging.error(f"문자 스타일 {index} 정보 수집 실패: {e}")
+            return style_info
+
+    def apply_character_html_styles(self, text, style_info):
+        """
+        텍스트에 HTML 스타일을 적용합니다.
+
+        Args:
+            text (str): 원본 텍스트
+            style_info (dict): 스타일 정보
+
+        Returns:
+            str: HTML 스타일이 적용된 텍스트
+        """
+        try:
+            # 이미 HTML 태그가 있는지 확인하여 중복 적용 방지
+            if '<' in text and '>' in text:
+                content = text
+            else:
+                content = text.strip()
+
+            styles = []
+
+            # 정렬 스타일 적용
+            if style_info.get('alignment'):
+                alignment = style_info['alignment']
+                if alignment == "Left":
+                    styles.append("text-align: left")
+                elif alignment == "Center":
+                    styles.append("text-align: center")
+                elif alignment == "Right":
+                    styles.append("text-align: right")
+                elif alignment == "Justify":
+                    styles.append("text-align: justify")
+
+            # 굵기 스타일 적용
+            if style_info.get('weight'):
+                weight = style_info['weight']
+                if weight == "Normal":
+                    styles.append("font-weight: normal")
+                elif weight == "Bold":
+                    styles.append("font-weight: bold")
+            elif style_info.get('weight_value'):
+                styles.append(f"font-weight: {style_info['weight_value']}")
+
+            # 폰트 스타일 적용
+            if style_info.get('style'):
+                font_style = style_info['style']
+                if font_style == "Normal":
+                    styles.append("font-style: normal")
+                elif font_style == "Italic":
+                    styles.append("font-style: italic")
+                elif font_style == "Oblique":
+                    styles.append("font-style: oblique")
+
+            # 색상 스타일 적용
+            if style_info.get('color'):
+                styles.append(f"color: {style_info['color']}")
+
+            # 스타일이 있으면 적용
+            if styles:
+                style_string = "; ".join(styles)
+                # div 태그로 감싸서 블록 레벨 스타일 적용
+                styled_text = f'<div style="{style_string}">{content}</div>'
+                logging.debug(f"HTML 스타일 적용: {styled_text}")
+                return styled_text
+            else:
+                return text
+
+        except Exception as e:
+            logging.error(f"HTML 스타일 적용 실패: {e}")
+            return text
 
     def add_chapter_row(self, line_no, title, regex_name, pattern):
         table = self.ui.tableWidget_ChapterList
@@ -2220,8 +2900,26 @@ p {{
 
 
 if __name__ == "__main__":
-    initialize_database()
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    """
+    애플리케이션 진입점
+
+    데이터베이스 초기화 후 GUI 애플리케이션을 시작합니다.
+    """
+    try:
+        # 데이터베이스 초기화
+        initialize_database()
+        logging.info("데이터베이스 초기화 완료")
+
+        # PyQt6 애플리케이션 시작
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        window.show()
+
+        logging.info("GUI 애플리케이션 시작")
+        sys.exit(app.exec())
+
+    except Exception as e:
+        logging.critical(f"애플리케이션 시작 실패: {e}")
+        if 'app' in locals():
+            app.quit()
+        sys.exit(1)
