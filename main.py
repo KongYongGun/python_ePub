@@ -406,6 +406,9 @@ class MainWindow(QMainWindow):
         # 챕터 스타일 기능 초기화
         self.initialize_chapter_styling()
 
+        # ePub 분할 기능 초기화
+        self.initialize_epub_divide()
+
         # 폰트 콤보박스 초기화
         self.initialize_font_comboboxes()
 
@@ -1026,14 +1029,31 @@ class MainWindow(QMainWindow):
 
             logging.info(f"ePub 저장 경로: {save_path}")
 
-            # ePub 파일 생성
-            self.create_epub_file(save_path)
-
-            QMessageBox.information(
-                self, "변환 완료",
-                f"ePub 파일이 성공적으로 생성되었습니다:\n{save_path}"
-            )
-            logging.info(f"ePub 변환 완료: {save_path}")
+            # ePub 분할 설정 확인
+            divide_info = self.get_epub_divide_info()
+            
+            if divide_info['enabled']:
+                # 분할 ePub 생성
+                created_files = self.create_divided_epub_files(save_path, divide_info)
+                
+                # 분할 생성 완료 메시지
+                if created_files:
+                    files_list = '\n'.join([os.path.basename(f) for f in created_files])
+                    total_volumes = len(created_files)
+                    QMessageBox.information(
+                        self, "분할 ePub 생성 완료",
+                        f"총 {total_volumes}권의 ePub 파일이 생성되었습니다:\n\n{files_list}"
+                    )
+                    logging.info(f"분할 ePub 변환 완료: {total_volumes}개 파일")
+            else:
+                # 단일 ePub 생성
+                self.create_epub_file(save_path)
+                
+                QMessageBox.information(
+                    self, "변환 완료",
+                    f"ePub 파일이 성공적으로 생성되었습니다:\n{save_path}"
+                )
+                logging.info(f"ePub 변환 완료: {save_path}")
 
         except PermissionError as e:
             error_msg = f"파일 쓰기 권한이 없습니다: {str(e)}"
@@ -1151,6 +1171,222 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logging.error(f"ePub 파일 생성 중 오류 발생: {e}")
             raise
+
+    def create_divided_epub_files(self, base_save_path, divide_info):
+        """
+        챕터를 분할하여 여러 개의 ePub 파일을 생성합니다.
+        
+        Args:
+            base_save_path (str): 기본 저장 경로
+            divide_info (dict): 분할 설정 정보
+        """
+        try:
+            logging.info("분할 ePub 생성 시작")
+            
+            # 전체 챕터 정보 가져오기
+            chapters = self.get_chapters_from_table()
+            total_chapters = len(chapters)
+            chapters_per_volume = divide_info['chapters_per_volume']
+            
+            if total_chapters == 0:
+                raise ValueError("생성할 챕터가 없습니다.")
+                
+            # 권 정보 계산
+            volume_info = self.calculate_volume_info(total_chapters, chapters_per_volume)
+            
+            # 기본 파일명에서 확장자 제거
+            base_filename = os.path.splitext(base_save_path)[0]
+            
+            created_files = []
+            
+            # 각 권별로 ePub 생성
+            for volume_idx, (start_chapter, end_chapter) in enumerate(volume_info['volume_ranges']):
+                volume_number = volume_idx + 1
+                
+                # 권별 파일명 생성
+                volume_filename = self.generate_volume_filename(
+                    base_filename, volume_number, volume_info['volume_digits']
+                )
+                
+                # 해당 권의 챕터들 추출
+                volume_chapters = chapters[start_chapter:end_chapter]
+                
+                logging.info(f"권 {volume_number} 생성 중: {len(volume_chapters)}개 챕터 ({start_chapter+1}~{end_chapter})")
+                
+                # 임시로 원본 챕터를 백업하고 권별 챕터로 교체
+                original_chapters = self.backup_and_replace_chapters(volume_chapters)
+                
+                try:
+                    # 권별 ePub 생성
+                    self.create_epub_file(volume_filename)
+                    created_files.append(volume_filename)
+                    
+                    logging.info(f"권 {volume_number} 생성 완료: {volume_filename}")
+                    
+                finally:
+                    # 원본 챕터 복원
+                    self.restore_original_chapters(original_chapters)
+            
+            # 생성 완료 메시지 업데이트 (convert_to_epub에서 처리하도록 수정)
+            logging.info(f"분할 ePub 생성 완료: 총 {len(created_files)}개 파일")
+            
+            # 생성된 파일 목록을 반환하여 메시지에서 사용
+            return created_files
+            
+        except Exception as e:
+            error_msg = f"분할 ePub 생성 중 오류 발생: {e}"
+            logging.error(error_msg)
+            raise
+
+    def get_chapters_from_table(self):
+        """
+        챕터 테이블에서 챕터 정보를 가져옵니다.
+        
+        Returns:
+            list: 챕터 정보 리스트
+        """
+        try:
+            chapters = []
+            row_count = self.ui.tableWidget_Chapter.rowCount()
+            
+            for row in range(row_count):
+                # 라인 번호
+                line_item = self.ui.tableWidget_Chapter.item(row, 0)
+                line_no = int(line_item.text()) if line_item else 0
+                
+                # 챕터 제목
+                title_item = self.ui.tableWidget_Chapter.item(row, 1)
+                title = title_item.text() if title_item else f"챕터 {row + 1}"
+                
+                # 챕터 내용 (실제 텍스트에서 추출해야 함)
+                content = self.extract_chapter_content(line_no, row)
+                
+                chapters.append({
+                    'line_no': line_no,
+                    'title': title,
+                    'content': content
+                })
+                
+            logging.debug(f"챕터 테이블에서 {len(chapters)}개 챕터 정보 추출")
+            return chapters
+            
+        except Exception as e:
+            logging.error(f"챕터 정보 추출 실패: {e}")
+            return []
+
+    def extract_chapter_content(self, start_line, chapter_index):
+        """
+        지정된 라인부터 다음 챕터까지의 내용을 추출합니다.
+        
+        Args:
+            start_line (int): 시작 라인 번호
+            chapter_index (int): 현재 챕터 인덱스
+            
+        Returns:
+            str: 챕터 내용
+        """
+        try:
+            # 전체 텍스트 가져오기
+            full_text = self.ui.textEdit_Text.toPlainText()
+            lines = full_text.split('\n')
+            
+            # 시작 라인 인덱스 (1-based -> 0-based)
+            start_idx = max(0, start_line - 1)
+            
+            # 다음 챕터의 시작 라인 찾기
+            next_chapter_row = chapter_index + 1
+            if next_chapter_row < self.ui.tableWidget_Chapter.rowCount():
+                next_line_item = self.ui.tableWidget_Chapter.item(next_chapter_row, 0)
+                if next_line_item:
+                    end_idx = max(0, int(next_line_item.text()) - 1)
+                else:
+                    end_idx = len(lines)
+            else:
+                end_idx = len(lines)
+            
+            # 챕터 내용 추출
+            chapter_lines = lines[start_idx:end_idx]
+            content = '\n'.join(chapter_lines).strip()
+            
+            logging.debug(f"챕터 {chapter_index} 내용 추출: {start_idx}~{end_idx} 라인")
+            return content
+            
+        except Exception as e:
+            logging.error(f"챕터 내용 추출 실패: {e}")
+            return f"챕터 {chapter_index + 1} 내용"
+
+    def backup_and_replace_chapters(self, volume_chapters):
+        """
+        현재 챕터 테이블을 백업하고 권별 챕터로 교체합니다.
+        
+        Args:
+            volume_chapters (list): 권별 챕터 리스트
+            
+        Returns:
+            list: 백업된 원본 챕터 정보
+        """
+        try:
+            # 원본 챕터 정보 백업
+            original_chapters = []
+            row_count = self.ui.tableWidget_Chapter.rowCount()
+            
+            for row in range(row_count):
+                row_data = []
+                for col in range(self.ui.tableWidget_Chapter.columnCount()):
+                    item = self.ui.tableWidget_Chapter.item(row, col)
+                    row_data.append(item.text() if item else "")
+                original_chapters.append(row_data)
+            
+            # 테이블 초기화
+            self.ui.tableWidget_Chapter.setRowCount(0)
+            
+            # 권별 챕터로 교체
+            for idx, chapter in enumerate(volume_chapters):
+                self.ui.tableWidget_Chapter.insertRow(idx)
+                
+                # 라인 번호
+                line_item = QTableWidgetItem(str(chapter['line_no']))
+                self.ui.tableWidget_Chapter.setItem(idx, 0, line_item)
+                
+                # 챕터 제목
+                title_item = QTableWidgetItem(chapter['title'])
+                self.ui.tableWidget_Chapter.setItem(idx, 1, title_item)
+                
+                # 기타 컬럼이 있다면 빈 값으로 설정
+                for col in range(2, self.ui.tableWidget_Chapter.columnCount()):
+                    empty_item = QTableWidgetItem("")
+                    self.ui.tableWidget_Chapter.setItem(idx, col, empty_item)
+            
+            logging.debug(f"챕터 테이블 교체 완료: {len(volume_chapters)}개 챕터")
+            return original_chapters
+            
+        except Exception as e:
+            logging.error(f"챕터 테이블 교체 실패: {e}")
+            return []
+
+    def restore_original_chapters(self, original_chapters):
+        """
+        백업된 원본 챕터 정보를 복원합니다.
+        
+        Args:
+            original_chapters (list): 백업된 원본 챕터 정보
+        """
+        try:
+            # 테이블 초기화
+            self.ui.tableWidget_Chapter.setRowCount(0)
+            
+            # 원본 챕터 정보 복원
+            for idx, row_data in enumerate(original_chapters):
+                self.ui.tableWidget_Chapter.insertRow(idx)
+                
+                for col, data in enumerate(row_data):
+                    item = QTableWidgetItem(data)
+                    self.ui.tableWidget_Chapter.setItem(idx, col, item)
+            
+            logging.debug(f"원본 챕터 테이블 복원 완료: {len(original_chapters)}개 챕터")
+            
+        except Exception as e:
+            logging.error(f"원본 챕터 테이블 복원 실패: {e}")
 
     def _create_backup_if_exists(self, file_path):
         """
@@ -1725,7 +1961,7 @@ p {{
 
                 # 챕터 스타일 정보 가져오기
                 chapter_style_info = self.get_chapter_style_info()
-                
+
                 # 챕터 제목에 스타일 적용
                 styled_chapter_title = self.apply_chapter_title_style(chapter['title'], chapter_style_info)
 
@@ -1756,7 +1992,7 @@ p {{
 
                 # 챕터 스타일 정보 가져오기 (오류 발생 시에도 적용)
                 chapter_style_info = self.get_chapter_style_info()
-                
+
                 # 챕터 제목에 스타일 적용
                 styled_chapter_title = self.apply_chapter_title_style(chapter['title'], chapter_style_info)
 
@@ -2086,29 +2322,29 @@ p {{
     def initialize_chapter_styling(self):
         """챕터 스타일 기능을 초기화합니다."""
         logging.debug("챕터 스타일 기능 초기화 시작")
-        
+
         try:
             # comboBox_ChapterSize 초기화
             if hasattr(self.ui, 'comboBox_ChapterSize'):
                 self.ui.comboBox_ChapterSize.clear()
                 chapter_sizes = [
                     ("<H1>", "H1"),
-                    ("<H2>", "H2"), 
+                    ("<H2>", "H2"),
                     ("<H3>", "H3"),
                     ("<H4>", "H4"),
                     ("<H5>", "H5"),
                     ("<H6>", "H6")
                 ]
-                
+
                 for display_text, data_value in chapter_sizes:
                     self.ui.comboBox_ChapterSize.addItem(display_text, data_value)
-                
+
                 # 기본값을 <H4>로 설정
                 default_index = self.ui.comboBox_ChapterSize.findData("H4")
                 if default_index >= 0:
                     self.ui.comboBox_ChapterSize.setCurrentIndex(default_index)
-                    
-            # comboBox_ChapterAlign 초기화  
+
+            # comboBox_ChapterAlign 초기화
             if hasattr(self.ui, 'comboBox_ChapterAlign'):
                 self.ui.comboBox_ChapterAlign.clear()
                 chapter_aligns = [
@@ -2116,24 +2352,24 @@ p {{
                     ("<가운데>", "Center"),
                     ("<오른쪽>", "Right")
                 ]
-                
+
                 for display_text, data_value in chapter_aligns:
                     self.ui.comboBox_ChapterAlign.addItem(display_text, data_value)
-                
+
                 # 기본값을 <왼쪽>으로 설정
                 default_index = self.ui.comboBox_ChapterAlign.findData("Left")
                 if default_index >= 0:
                     self.ui.comboBox_ChapterAlign.setCurrentIndex(default_index)
-                    
+
             # checkBox_ChapterStyle 이벤트 연결
             if hasattr(self.ui, 'checkBox_ChapterStyle'):
                 self.ui.checkBox_ChapterStyle.toggled.connect(self.on_chapter_style_checkbox_toggled)
-                
+
             # 초기 컴포넌트 상태 설정
             self.update_chapter_components_state()
-            
+
             logging.debug("챕터 스타일 기능 초기화 완료")
-            
+
         except Exception as e:
             logging.error(f"챕터 스타일 기능 초기화 실패: {e}")
 
@@ -2150,24 +2386,24 @@ p {{
             if hasattr(self.ui, 'checkBox_ChapterStyle'):
                 checkbox = self.ui.checkBox_ChapterStyle
                 chapter_style_enabled = checkbox.isChecked()
-                
+
             # comboBox_ChapterSize 활성화/비활성화
             if hasattr(self.ui, 'comboBox_ChapterSize'):
                 self.ui.comboBox_ChapterSize.setEnabled(chapter_style_enabled)
-                
-            # comboBox_ChapterAlign 활성화/비활성화  
+
+            # comboBox_ChapterAlign 활성화/비활성화
             if hasattr(self.ui, 'comboBox_ChapterAlign'):
                 self.ui.comboBox_ChapterAlign.setEnabled(chapter_style_enabled)
-                
+
             logging.debug(f"챕터 스타일 컴포넌트 상태 업데이트: {chapter_style_enabled}")
-            
+
         except Exception as e:
             logging.error(f"챕터 스타일 컴포넌트 상태 업데이트 실패: {e}")
 
     def get_chapter_style_info(self):
         """
         챕터 스타일 정보를 수집합니다.
-        
+
         Returns:
             dict: 챕터 스타일 정보 딕셔너리
         """
@@ -2176,27 +2412,27 @@ p {{
             'size': 'H4',
             'align': 'Left'
         }
-        
+
         try:
             # 스타일 활성화 여부 확인
             if hasattr(self.ui, 'checkBox_ChapterStyle'):
                 style_info['enabled'] = self.ui.checkBox_ChapterStyle.isChecked()
-                
+
             # 챕터 크기 정보
             if hasattr(self.ui, 'comboBox_ChapterSize'):
                 size_data = self.ui.comboBox_ChapterSize.currentData()
                 if size_data:
                     style_info['size'] = size_data
-                    
-            # 챕터 정렬 정보  
+
+            # 챕터 정렬 정보
             if hasattr(self.ui, 'comboBox_ChapterAlign'):
                 align_data = self.ui.comboBox_ChapterAlign.currentData()
                 if align_data:
                     style_info['align'] = align_data
-                    
+
             logging.debug(f"챕터 스타일 정보: {style_info}")
             return style_info
-            
+
         except Exception as e:
             logging.error(f"챕터 스타일 정보 수집 실패: {e}")
             return style_info
@@ -2204,11 +2440,11 @@ p {{
     def apply_chapter_title_style(self, title, style_info):
         """
         챕터 제목에 스타일을 적용합니다.
-        
+
         Args:
             title (str): 원본 챕터 제목
             style_info (dict): 챕터 스타일 정보
-            
+
         Returns:
             str: 스타일이 적용된 챕터 제목 HTML
         """
@@ -2216,29 +2452,165 @@ p {{
             if not style_info['enabled']:
                 # 스타일이 비활성화된 경우 기본 div 태그 사용
                 return f'<div class="chapter-title">{title}</div>'
-                
+
             # HTML 태그 및 CSS 클래스 설정
             tag = style_info['size'].lower()  # H1, H2, H3, H4, H5, H6 -> h1, h2, h3, h4, h5, h6
-            
+
             # 정렬 스타일 CSS 클래스 매핑
             align_mapping = {
                 'Left': 'text-align: left;',
                 'Center': 'text-align: center;',
                 'Right': 'text-align: right;'
             }
-            
+
             align_style = align_mapping.get(style_info['align'], 'text-align: left;')
-            
+
             # 스타일이 적용된 챕터 제목 HTML 생성
             styled_title = f'<{tag} class="chapter-title" style="{align_style}">{title}</{tag}>'
-            
+
             logging.debug(f"챕터 제목 스타일 적용: {title} -> {styled_title}")
             return styled_title
-            
+
         except Exception as e:
             logging.error(f"챕터 제목 스타일 적용 실패: {e}")
             # 오류 발생 시 기본 형태로 반환
             return f'<div class="chapter-title">{title}</div>'
+
+    # ==================================================================================
+    # ePub 분할 기능
+    # ==================================================================================
+
+    def initialize_epub_divide(self):
+        """ePub 분할 기능을 초기화합니다."""
+        logging.debug("ePub 분할 기능 초기화 시작")
+        
+        try:
+            # spinBox_ChapterCnt 초기값 설정
+            if hasattr(self.ui, 'spinBox_ChapterCnt'):
+                self.ui.spinBox_ChapterCnt.setMinimum(1)
+                self.ui.spinBox_ChapterCnt.setMaximum(1000)
+                self.ui.spinBox_ChapterCnt.setValue(10)  # 기본값 10개 챕터
+                
+            # checkBox_ePubDivide 이벤트 연결
+            if hasattr(self.ui, 'checkBox_ePubDivide'):
+                self.ui.checkBox_ePubDivide.toggled.connect(self.on_epub_divide_checkbox_toggled)
+                
+            # 초기 컴포넌트 상태 설정
+            self.update_epub_divide_components_state()
+            
+            logging.debug("ePub 분할 기능 초기화 완료")
+            
+        except Exception as e:
+            logging.error(f"ePub 분할 기능 초기화 실패: {e}")
+
+    def on_epub_divide_checkbox_toggled(self, checked):
+        """ePub 분할 체크박스 토글 이벤트 처리"""
+        logging.debug(f"ePub 분할 체크박스 토글: {checked}")
+        self.update_epub_divide_components_state()
+
+    def update_epub_divide_components_state(self):
+        """ePub 분할 관련 컴포넌트들의 활성화 상태를 업데이트합니다."""
+        try:
+            # checkBox_ePubDivide 상태 확인
+            epub_divide_enabled = False
+            if hasattr(self.ui, 'checkBox_ePubDivide'):
+                checkbox = self.ui.checkBox_ePubDivide
+                epub_divide_enabled = checkbox.isChecked()
+                
+            # spinBox_ChapterCnt 활성화/비활성화
+            if hasattr(self.ui, 'spinBox_ChapterCnt'):
+                self.ui.spinBox_ChapterCnt.setEnabled(epub_divide_enabled)
+                
+            logging.debug(f"ePub 분할 컴포넌트 상태 업데이트: {epub_divide_enabled}")
+            
+        except Exception as e:
+            logging.error(f"ePub 분할 컴포넌트 상태 업데이트 실패: {e}")
+
+    def get_epub_divide_info(self):
+        """
+        ePub 분할 설정 정보를 수집합니다.
+        
+        Returns:
+            dict: ePub 분할 설정 정보
+        """
+        divide_info = {
+            'enabled': False,
+            'chapters_per_volume': 10
+        }
+        
+        try:
+            # 분할 활성화 여부 확인
+            if hasattr(self.ui, 'checkBox_ePubDivide'):
+                divide_info['enabled'] = self.ui.checkBox_ePubDivide.isChecked()
+                
+            # 권당 챕터 수 확인
+            if hasattr(self.ui, 'spinBox_ChapterCnt'):
+                divide_info['chapters_per_volume'] = self.ui.spinBox_ChapterCnt.value()
+                
+            logging.debug(f"ePub 분할 정보: {divide_info}")
+            return divide_info
+            
+        except Exception as e:
+            logging.error(f"ePub 분할 정보 수집 실패: {e}")
+            return divide_info
+
+    def calculate_volume_info(self, total_chapters, chapters_per_volume):
+        """
+        전체 챕터 수와 권당 챕터 수를 기반으로 권 정보를 계산합니다.
+        
+        Args:
+            total_chapters (int): 전체 챕터 수
+            chapters_per_volume (int): 권당 챕터 수
+            
+        Returns:
+            dict: 권 정보 (총 권수, 자릿수, 권별 챕터 범위)
+        """
+        try:
+            total_volumes = (total_chapters + chapters_per_volume - 1) // chapters_per_volume
+            volume_digits = len(str(total_volumes))
+            
+            volume_ranges = []
+            for volume in range(total_volumes):
+                start_chapter = volume * chapters_per_volume
+                end_chapter = min((volume + 1) * chapters_per_volume, total_chapters)
+                volume_ranges.append((start_chapter, end_chapter))
+                
+            volume_info = {
+                'total_volumes': total_volumes,
+                'volume_digits': volume_digits,
+                'volume_ranges': volume_ranges
+            }
+            
+            logging.debug(f"권 정보 계산 결과: {volume_info}")
+            return volume_info
+            
+        except Exception as e:
+            logging.error(f"권 정보 계산 실패: {e}")
+            return {'total_volumes': 1, 'volume_digits': 1, 'volume_ranges': [(0, total_chapters)]}
+
+    def generate_volume_filename(self, base_filename, volume_number, volume_digits):
+        """
+        권수에 따른 파일명을 생성합니다.
+        
+        Args:
+            base_filename (str): 기본 파일명 (확장자 제외)
+            volume_number (int): 권 번호 (1부터 시작)
+            volume_digits (int): 권수 표시 자릿수
+            
+        Returns:
+            str: 권수가 포함된 파일명
+        """
+        try:
+            # 권수를 지정된 자릿수로 포맷팅
+            volume_str = str(volume_number).zfill(volume_digits)
+            volume_filename = f"{base_filename}_{volume_str}권.epub"
+            
+            logging.debug(f"권 파일명 생성: {base_filename} -> {volume_filename}")
+            return volume_filename
+            
+        except Exception as e:
+            logging.error(f"권 파일명 생성 실패: {e}")
+            return f"{base_filename}_{volume_number}권.epub"
 
     def on_chars_checkbox_toggled(self, index, checked):
         """문자 체크박스 토글 이벤트 처리"""
