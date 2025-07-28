@@ -1,3 +1,30 @@
+"""
+ePub 변환 및 품질 검증 모듈
+
+텍스트 파일을 완전한 ePub 3.0 형식으로 변환하고 품질을 검증하는 
+핵심 모듈입니다.
+
+주요 기능:
+- 텍스트 파일을 ePub 3.0 형식으로 변환
+- 챕터 자동 분할 및 목차 생성
+- 커버 이미지 및 삽화 포함
+- 폰트 임베딩 및 서브셋 최적화
+- CSS 스타일시트 적용
+- ePub 품질 검증 및 표준 준수 확인
+- 메타데이터 설정 (제목, 작가, 언어, 출판일 등)
+- 진행률 표시 및 사용자 피드백
+
+지원 기능:
+- ePub 3.0 표준 완전 지원
+- 반응형 레이아웃 및 다양한 화면 크기 지원
+- 접근성 기능 (aria-label, navigation 등)
+- 폰트 라이선스 호환성 검사
+- 압축 최적화
+
+작성자: ePub Python Team
+최종 수정일: 2025-07-28
+"""
+
 import os
 import uuid
 from datetime import datetime
@@ -7,6 +34,7 @@ import time
 import logging
 import re
 import zipfile
+from typing import List, Dict, Optional, Tuple
 from PyQt6.QtWidgets import QMessageBox, QProgressDialog
 from PyQt6.QtCore import QTimer, Qt
 from ebooklib import epub
@@ -20,19 +48,58 @@ import io
 # ==================================================================================
 
 class EpubQualityValidator:
-    """ePub 파일의 품질을 검증하는 클래스"""
+    """
+    ePub 파일의 품질과 표준 준수를 검증하는 클래스입니다.
+    
+    ePub 3.0 표준에 따라 파일 구조, 메타데이터, 내용을 분석하고
+    문제점이나 개선사항을 식별하여 보고서를 생성합니다.
+    
+    검증 항목:
+    - 파일 크기 및 구조 유효성
+    - 메타데이터 완성도
+    - 챕터 내용 및 HTML 구조
+    - 이미지 및 폰트 파일 유효성
+    - CSS 스타일시트 문법
+    - 접근성 준수 사항
+    
+    Attributes:
+        main_window: 메인 윈도우 참조 (로깅용)
+        issues (List[str]): 발견된 문제점 목록
+    """
 
     def __init__(self, main_window):
+        """
+        ePub 품질 검증기를 초기화합니다.
+        
+        Args:
+            main_window: 메인 윈도우 객체 (로깅 메서드 사용)
+        """
         self.main_window = main_window
         self.issues = []
 
-    def validate_epub_file(self, epub_path):
-        """ePub 파일의 품질을 검증합니다."""
+    def validate_epub_file(self, epub_path: str) -> List[str]:
+        """
+        ePub 파일의 품질을 종합적으로 검증합니다.
+        
+        파일 구조, 메타데이터, 내용, 표준 준수 등을 체크하여
+        문제점 목록을 반환합니다.
+        
+        Args:
+            epub_path (str): 검증할 ePub 파일 경로
+            
+        Returns:
+            List[str]: 발견된 문제점 및 개선사항 목록
+            
+        Raises:
+            FileNotFoundError: ePub 파일이 존재하지 않을 때
+            zipfile.BadZipFile: ePub 파일이 손상되었을 때
+        """
         self.issues = []
 
         try:
             self.log_info(f"ePub 품질 검증 시작: {epub_path}")
 
+            # 파일 존재 여부 확인
             if not os.path.exists(epub_path):
                 self.issues.append("❌ ePub 파일이 존재하지 않습니다.")
                 return self.issues
@@ -40,7 +107,7 @@ class EpubQualityValidator:
             # 1. 파일 크기 검증
             self._check_file_size(epub_path)
 
-            # 2. 파일 구조 검증
+            # 2. 파일 구조 검증  
             self._check_file_structure(epub_path)
 
             # 3. 메타데이터 검증

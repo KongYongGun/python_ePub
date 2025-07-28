@@ -1,31 +1,99 @@
+"""
+ePub 데이터베이스 관리 모듈
+
+이 모듈은 ePub 변환기의 모든 설정 및 데이터를 SQLite 데이터베이스로 관리합니다.
+
+주요 기능:
+- 스타일시트(QSS) 테마 관리
+- 챕터 정규식 패턴 저장
+- 구두점 정규식 패턴 관리
+- 폰트 설정 및 메타데이터 저장
+- 데이터베이스 초기화 및 업데이트
+
+테이블 구조:
+- Stylesheet: QSS 테마 스타일 저장
+- ChapterRegex: 챕터 구분용 정규식 패턴
+- PunctuationRegex: 구두점 스타일링용 정규식
+- FontInfo: 폰트 정보 및 설정
+- EpubMeta: ePub 메타데이터 기본값
+
+작성자: ePub Python Team
+최종 수정일: 2025-07-28
+"""
+
 import os
 import sqlite3
 from datetime import datetime
+import logging
 
 # 항상 현재 파일 기준 경로에 생성
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "epub_config.db")
 
 def table_exists(cursor, table_name):
-    """테이블 존재 여부를 확인하는 함수"""
-    cursor.execute("""
-        SELECT name FROM sqlite_master
-        WHERE type='table' AND name=?
-    """, (table_name,))
-    return cursor.fetchone() is not None
+    """
+    데이터베이스에서 지정된 테이블의 존재 여부를 확인합니다.
+    
+    Args:
+        cursor (sqlite3.Cursor): SQLite 커서 객체
+        table_name (str): 확인할 테이블명
+        
+    Returns:
+        bool: 테이블이 존재하면 True, 그렇지 않으면 False
+        
+    Raises:
+        sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
+    """
+    try:
+        cursor.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name=?
+        """, (table_name,))
+        return cursor.fetchone() is not None
+    except sqlite3.Error as e:
+        logging.error(f"테이블 존재 여부 확인 중 오류 발생: {e}")
+        return False
 
 def initialize_database():
-    db_exists = os.path.exists(DB_FILE)
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
+    """
+    ePub 변환기의 SQLite 데이터베이스를 초기화합니다.
+    
+    데이터베이스 파일이 존재하지 않으면 새로 생성하고,
+    필요한 모든 테이블과 기본 데이터를 설정합니다.
+    
+    생성되는 테이블:
+    - Stylesheet: QSS 테마 스타일 저장
+    - ChapterRegex: 챕터 구분용 정규식 패턴
+    - PunctuationRegex: 구두점 스타일링용 정규식
+    - FontInfo: 폰트 정보 및 설정
+    - EpubMeta: ePub 메타데이터 기본값
+    
+    Returns:
+        None
+        
+    Raises:
+        sqlite3.Error: 데이터베이스 연결 또는 테이블 생성 중 오류 발생 시
+        OSError: 데이터베이스 파일 생성 권한 없음
+    """
+    try:
+        db_exists = os.path.exists(DB_FILE)
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
 
-    if not db_exists:
-        print("DB 파일이 존재하지 않아 새로 생성합니다...")
-    else:
-        print("기존 DB 파일이 존재합니다. 테이블 구조를 확인합니다...")
+        if not db_exists:
+            logging.info("DB 파일이 존재하지 않아 새로 생성합니다...")
+        else:
+            logging.info("기존 DB 파일이 존재합니다. 테이블 구조를 확인합니다...")
 
-    # 각 테이블별로 존재 여부 확인 후 생성
-    tables_created = []
+        # 각 테이블별로 존재 여부 확인 후 생성
+        tables_created = []
+    
+    except sqlite3.Error as e:
+        logging.error(f"데이터베이스 초기화 중 오류 발생: {e}")
+        raise
+    except OSError as e:
+        logging.error(f"데이터베이스 파일 생성 중 오류 발생: {e}")
+        raise
 
     # Stylesheet 테이블: QSS 테마 스타일 저장
     if not table_exists(cursor, 'Stylesheet'):

@@ -1,5 +1,24 @@
+"""
+ePub 데이터베이스 로더 모듈
+
+SQLite 데이터베이스에서 ePub 변환기의 설정 데이터를 조회하고
+PyQt6 UI 컴포넌트에 로드하는 기능을 제공합니다.
+
+주요 기능:
+- 스타일시트(QSS) 테마 목록 조회
+- 챕터 정규식 패턴 목록 조회  
+- 구두점 정규식 패턴 목록 조회
+- 콤보박스 위젯에 데이터 로드
+- 데이터베이스 연결 관리
+
+작성자: ePub Python Team
+최종 수정일: 2025-07-28
+"""
+
 import os
 import sqlite3
+import logging
+from typing import List, Tuple, Optional
 from PyQt6.QtWidgets import QComboBox
 
 # DB 파일 경로 설정 (현재 실행 파일 기준)
@@ -7,47 +26,90 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "epub_config.db")
 
 def get_connection():
-    """SQLite DB 연결 객체 반환"""
-    return sqlite3.connect(DB_FILE)
+    """
+    SQLite 데이터베이스 연결 객체를 반환합니다.
+    
+    Returns:
+        sqlite3.Connection: SQLite 데이터베이스 연결 객체
+        
+    Raises:
+        sqlite3.Error: 데이터베이스 연결 실패 시
+        FileNotFoundError: 데이터베이스 파일이 존재하지 않을 시
+    """
+    try:
+        if not os.path.exists(DB_FILE):
+            raise FileNotFoundError(f"데이터베이스 파일을 찾을 수 없습니다: {DB_FILE}")
+        return sqlite3.connect(DB_FILE)
+    except sqlite3.Error as e:
+        logging.error(f"데이터베이스 연결 중 오류 발생: {e}")
+        raise
 
 def load_stylesheet_list():
     """
-    Stylesheet 테이블에서 QSS 테마 리스트 조회
-    :return: [(id, name)]
+    Stylesheet 테이블에서 QSS 테마 목록을 조회합니다.
+    
+    Returns:
+        List[Tuple[int, str]]: (id, name) 형태의 튜플 리스트
+        
+    Raises:
+        sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
     """
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM Stylesheet ORDER BY id")
-        return cursor.fetchall()
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name FROM Stylesheet ORDER BY id")
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logging.error(f"스타일시트 목록 조회 중 오류 발생: {e}")
+        return []
 
 def load_chapter_regex_list():
     """
-    ChapterRegex 테이블에서 (id, name, example, pattern) 반환
+    ChapterRegex 테이블에서 활성화된 챕터 정규식 패턴 목록을 조회합니다.
+    
+    Returns:
+        List[Tuple[int, str, str, str]]: (id, name, example, pattern) 형태의 튜플 리스트
+        
+    Raises:
+        sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
     """
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, example, pattern
-            FROM ChapterRegex
-            WHERE is_enabled = 1
-            ORDER BY id
-        """)
-        return cursor.fetchall()
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, example, pattern
+                FROM ChapterRegex
+                WHERE is_enabled = 1
+                ORDER BY id
+            """)
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logging.error(f"챕터 정규식 목록 조회 중 오류 발생: {e}")
+        return []
 
 def load_punctuation_regex_list():
     """
-    PunctuationRegex 테이블에서 괄호 정규식 조회
-    :return: [(id, name, pattern)]
+    PunctuationRegex 테이블에서 활성화된 구두점 정규식 패턴 목록을 조회합니다.
+    
+    Returns:
+        List[Tuple[int, str, str]]: (id, name, pattern) 형태의 튜플 리스트
+        
+    Raises:
+        sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
     """
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, pattern
-            FROM PunctuationRegex
-            WHERE is_enabled = 1
-            ORDER BY id
-        """)
-        return cursor.fetchall()
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, pattern
+                FROM PunctuationRegex
+                WHERE is_enabled = 1
+                ORDER BY id
+            """)
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logging.error(f"구두점 정규식 목록 조회 중 오류 발생: {e}")
+        return []
 
 def load_text_styles(style_type):
     """
