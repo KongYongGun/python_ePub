@@ -399,7 +399,7 @@ class MainWindow(QMainWindow):
 
         # 문자 스타일 기능 초기화
         self.initialize_character_styling()
-        
+
         # 괄호 스타일 기능 초기화
         self.initialize_bracket_styling()
 
@@ -1952,7 +1952,7 @@ p {{
     def initialize_bracket_styling(self):
         """괄호 스타일 기능을 초기화합니다."""
         logging.debug("괄호 스타일 기능 초기화 시작")
-        
+
         # checkBox_Brackets1~7과 관련 컴포넌트들 이벤트 연결
         for i in range(1, 8):
             try:
@@ -1961,19 +1961,19 @@ p {{
                 if hasattr(self.ui, checkbox_name):
                     checkbox = getattr(self.ui, checkbox_name)
                     checkbox.toggled.connect(partial(self.on_brackets_checkbox_toggled, i))
-                
+
                 # 색상 체크박스 이벤트 연결
                 color_checkbox_name = f"checkBox_BracketsColor{i}"
                 if hasattr(self.ui, color_checkbox_name):
                     color_checkbox = getattr(self.ui, color_checkbox_name)
                     color_checkbox.toggled.connect(partial(self.on_brackets_color_checkbox_toggled, i))
-                
+
                 # 굵기 콤보박스 변경 이벤트 연결
                 weight_combo_name = f"comboBox_BracketsWeight{i}"
                 if hasattr(self.ui, weight_combo_name):
                     weight_combo = getattr(self.ui, weight_combo_name)
                     weight_combo.currentTextChanged.connect(partial(self.on_brackets_weight_changed, i))
-                
+
                 # SpinBox 변경 이벤트 연결
                 spinbox_name = f"spinBox_BracketsWeight{i}"
                 if hasattr(self.ui, spinbox_name):
@@ -1981,32 +1981,32 @@ p {{
                     spinbox.valueChanged.connect(partial(self.on_brackets_weight_spinbox_changed, i))
                     # 기본값 400으로 설정
                     spinbox.setValue(400)
-                
+
                 # 초기 컴포넌트 상태 설정
                 self.update_brackets_components_state(i)
-                
+
                 logging.debug(f"괄호 스타일 {i}번 컴포넌트 초기화 완료")
-                
+
             except Exception as e:
                 logging.error(f"괄호 스타일 {i}번 초기화 실패: {e}")
-        
+
         logging.debug("괄호 스타일 기능 초기화 완료")
 
     def on_brackets_checkbox_toggled(self, index, checked):
         """괄호 체크박스 토글 이벤트 처리"""
         logging.debug(f"괄호 체크박스 {index} 토글: {checked}")
         self.update_brackets_components_state(index)
-    
+
     def on_brackets_color_checkbox_toggled(self, index, checked):
         """괄호 색상 체크박스 토글 이벤트 처리"""
         logging.debug(f"괄호 색상 체크박스 {index} 토글: {checked}")
         self.update_brackets_components_state(index)
-    
+
     def on_brackets_weight_changed(self, index, text):
         """괄호 굵기 콤보박스 변경 이벤트 처리"""
         logging.debug(f"괄호 굵기 {index} 변경: {text}")
         self.update_brackets_components_state(index)
-    
+
     def on_brackets_weight_spinbox_changed(self, index, value):
         """괄호 굵기 SpinBox 변경 이벤트 처리"""
         logging.debug(f"괄호 굵기 SpinBox {index} 변경: {value}")
@@ -2020,14 +2020,14 @@ p {{
             if hasattr(self.ui, checkbox_name):
                 checkbox = getattr(self.ui, checkbox_name)
                 brackets_enabled = checkbox.isChecked()
-            
+
             # 색상 체크박스 상태 확인
             color_checkbox_name = f"checkBox_BracketsColor{index}"
             color_enabled = False
             if hasattr(self.ui, color_checkbox_name):
                 color_checkbox = getattr(self.ui, color_checkbox_name)
                 color_enabled = color_checkbox.isChecked()
-            
+
             # 굵기 콤보박스에서 '직접입력' 선택 여부 확인
             weight_combo_name = f"comboBox_BracketsWeight{index}"
             is_direct_input = False
@@ -2035,7 +2035,7 @@ p {{
                 weight_combo = getattr(self.ui, weight_combo_name)
                 current_data = weight_combo.currentData()
                 is_direct_input = (current_data == "Number")
-            
+
             # 각 컴포넌트 활성화/비활성화
             component_names = [
                 f"comboBox_Brackets{index}",
@@ -2043,24 +2043,24 @@ p {{
                 f"comboBox_BracketsWeight{index}",
                 f"comboBox_BracketsStyle{index}"
             ]
-            
+
             for comp_name in component_names:
                 if hasattr(self.ui, comp_name):
                     component = getattr(self.ui, comp_name)
                     component.setEnabled(brackets_enabled)
-            
+
             # SpinBox는 굵기가 '직접입력'이고 체크박스가 활성화된 경우에만 활성화
             spinbox_name = f"spinBox_BracketsWeight{index}"
             if hasattr(self.ui, spinbox_name):
                 spinbox = getattr(self.ui, spinbox_name)
                 spinbox.setEnabled(brackets_enabled and is_direct_input)
-            
+
             # 색상 관련 컴포넌트는 색상 체크박스 상태에 따라 결정
             color_lineedit_name = f"lineEdit_BracketsColor{index}"
             if hasattr(self.ui, color_lineedit_name):
                 color_lineedit = getattr(self.ui, color_lineedit_name)
                 color_lineedit.setEnabled(brackets_enabled and color_enabled)
-                
+
         except Exception as e:
             logging.error(f"괄호 컴포넌트 {index} 상태 업데이트 실패: {e}")
 
@@ -2163,7 +2163,7 @@ p {{
 
             # 괄호 스타일링을 전체 텍스트에 적용
             styled_text = self.apply_bracket_styling_to_text(full_text)
-            
+
             # 다시 라인별로 분할
             if styled_text != full_text:
                 styled_lines = styled_text.split('\n')
@@ -2363,22 +2363,22 @@ p {{
     def apply_bracket_styling_to_text(self, text):
         """
         텍스트에 괄호 스타일링을 적용합니다.
-        
+
         Args:
             text (str): 원본 텍스트
-            
+
         Returns:
             str: 괄호 스타일이 적용된 텍스트
         """
         try:
             styled_text = text
-            
+
             # 각 괄호 스타일 설정을 확인하고 적용
             for i in range(1, 8):
                 styled_text = self.apply_single_bracket_style(styled_text, i)
-            
+
             return styled_text
-            
+
         except Exception as e:
             logging.error(f"괄호 스타일링 적용 실패: {e}")
             return text
@@ -2386,11 +2386,11 @@ p {{
     def apply_single_bracket_style(self, text, index):
         """
         단일 괄호 스타일을 텍스트에 적용합니다.
-        
+
         Args:
             text (str): 대상 텍스트
             index (int): 괄호 스타일 인덱스 (1-7)
-            
+
         Returns:
             str: 스타일이 적용된 텍스트
         """
@@ -2399,28 +2399,28 @@ p {{
             checkbox_name = f"checkBox_Brackets{index}"
             if not hasattr(self.ui, checkbox_name):
                 return text
-                
+
             checkbox = getattr(self.ui, checkbox_name)
             if not checkbox.isChecked():
                 return text
-            
+
             # 선택된 괄호 패턴 가져오기
             combo_name = f"comboBox_Brackets{index}"
             if not hasattr(self.ui, combo_name):
                 return text
-                
+
             combo = getattr(self.ui, combo_name)
             pattern_data = combo.currentData()
-            
+
             if not pattern_data:
                 return text
-            
+
             # 패턴 정보 분석
             pattern_id, pattern_regex = pattern_data
             pattern_name = combo.currentText()
-            
+
             logging.debug(f"괄호 스타일 {index} 적용 시작: {pattern_name}, 패턴: {pattern_regex}")
-            
+
             # 패턴 유형에 따라 다른 처리 방식 적용
             if self.is_line_based_pattern(pattern_name):
                 # 라인 기반 패턴 (Starts with Dash, Starts with Box Drawing Character)
@@ -2428,10 +2428,10 @@ p {{
             else:
                 # 범위 기반 패턴 (Quotes, Brackets 등)
                 styled_text = self.apply_range_based_bracket_style(text, pattern_regex, index)
-            
+
             logging.debug(f"괄호 스타일 {index} 적용 완료")
             return styled_text
-            
+
         except Exception as e:
             logging.error(f"단일 괄호 스타일 {index} 적용 실패: {e}")
             return text
@@ -2453,23 +2453,23 @@ p {{
             import re
             lines = text.split('\n')
             styled_lines = []
-            
+
             for line in lines:
                 match = re.match(pattern_regex, line)
                 if match:
                     # 스타일 정보 수집
                     style_info = self.get_bracket_style_info(index)
-                    
+
                     # HTML 스타일 적용
                     styled_line = self.apply_bracket_html_styles(line, style_info)
                     styled_lines.append(styled_line)
-                    
+
                     logging.debug(f"라인 기반 괄호 스타일 적용: '{line}' -> '{styled_line}'")
                 else:
                     styled_lines.append(line)
-            
+
             return '\n'.join(styled_lines)
-            
+
         except Exception as e:
             logging.error(f"라인 기반 괄호 스타일 적용 실패: {e}")
             return text
@@ -2481,26 +2481,26 @@ p {{
         """
         try:
             import re
-            
+
             # DOTALL 플래그를 사용하여 줄바꿈도 매치
             flags = re.DOTALL | re.MULTILINE
-            
+
             # 스타일 정보 수집
             style_info = self.get_bracket_style_info(index)
-            
+
             def style_replacement(match):
                 """매치된 텍스트에 스타일을 적용하는 함수"""
                 matched_text = match.group(0)
                 return self.apply_bracket_html_styles(matched_text, style_info)
-            
+
             # 패턴에 매치되는 모든 텍스트에 스타일 적용
             styled_text = re.sub(pattern_regex, style_replacement, text, flags=flags)
-            
+
             if styled_text != text:
                 logging.debug(f"범위 기반 괄호 스타일 적용 완료")
-            
+
             return styled_text
-            
+
         except Exception as e:
             logging.error(f"범위 기반 괄호 스타일 적용 실패: {e}")
             return text
@@ -2508,10 +2508,10 @@ p {{
     def get_bracket_style_info(self, index):
         """
         지정된 인덱스의 괄호 스타일 정보를 수집합니다.
-        
+
         Args:
             index (int): 괄호 스타일 인덱스 (1-7)
-            
+
         Returns:
             dict: 스타일 정보 딕셔너리
         """
@@ -2522,20 +2522,20 @@ p {{
             'color': None,
             'weight_value': None
         }
-        
+
         try:
             # 정렬 정보
             align_combo_name = f"comboBox_BracketsAlign{index}"
             if hasattr(self.ui, align_combo_name):
                 align_combo = getattr(self.ui, align_combo_name)
                 style_info['alignment'] = align_combo.currentData()
-            
+
             # 굵기 정보
             weight_combo_name = f"comboBox_BracketsWeight{index}"
             if hasattr(self.ui, weight_combo_name):
                 weight_combo = getattr(self.ui, weight_combo_name)
                 weight_data = weight_combo.currentData()
-                
+
                 if weight_data == "Number":
                     # 직접입력인 경우 SpinBox 값 사용
                     spinbox_name = f"spinBox_BracketsWeight{index}"
@@ -2544,13 +2544,13 @@ p {{
                         style_info['weight_value'] = spinbox.value()
                 else:
                     style_info['weight'] = weight_data
-            
+
             # 스타일 정보
             style_combo_name = f"comboBox_BracketsStyle{index}"
             if hasattr(self.ui, style_combo_name):
                 style_combo = getattr(self.ui, style_combo_name)
                 style_info['style'] = style_combo.currentData()
-            
+
             # 색상 정보 (색상 체크박스가 체크된 경우에만)
             color_checkbox_name = f"checkBox_BracketsColor{index}"
             if hasattr(self.ui, color_checkbox_name):
@@ -2562,10 +2562,10 @@ p {{
                         color_value = color_lineedit.text().strip()
                         if color_value and color_value.startswith('#'):
                             style_info['color'] = color_value
-            
+
             logging.debug(f"괄호 스타일 {index} 정보 수집: {style_info}")
             return style_info
-            
+
         except Exception as e:
             logging.error(f"괄호 스타일 {index} 정보 수집 실패: {e}")
             return style_info
@@ -2573,11 +2573,11 @@ p {{
     def apply_bracket_html_styles(self, text, style_info):
         """
         텍스트에 괄호 HTML 스타일을 적용합니다.
-        
+
         Args:
             text (str): 원본 텍스트
             style_info (dict): 스타일 정보
-            
+
         Returns:
             str: HTML 스타일이 적용된 텍스트
         """
