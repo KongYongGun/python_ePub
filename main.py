@@ -1307,11 +1307,15 @@ class MainWindow(QMainWindow):
             else:
                 end_idx = len(lines)
 
-            # 챕터 내용 추출
-            chapter_lines = lines[start_idx:end_idx]
+            # 챕터 내용 추출 (제목 줄 제외하고 본문만)
+            # start_idx + 1부터 시작하여 제목 줄을 제외
+            if start_idx + 1 < end_idx:
+                chapter_lines = lines[start_idx + 1:end_idx]
+            else:
+                chapter_lines = []  # 제목만 있고 본문이 없는 경우
             content = '\n'.join(chapter_lines).strip()
 
-            logging.debug(f"챕터 {chapter_index} 내용 추출: {start_idx}~{end_idx} 라인")
+            logging.debug(f"챕터 {chapter_index} 내용 추출: {start_idx + 1}~{end_idx} 라인 (제목 제외)")
             return content
 
         except Exception as e:
@@ -1929,7 +1933,9 @@ p {{
             for i, chapter in enumerate(chapters):
                 start_line = chapter['line_no'] - 1
                 end_line = chapters[i + 1]['line_no'] - 1 if i + 1 < len(chapters) else len(lines)
-                chapter_lines = lines[start_line:end_line]
+                
+                # 제목 줄을 제외하고 본문만 추출 (start_line + 1부터 시작)
+                chapter_lines = lines[start_line + 1:end_line]
                 chapter['content'] = ''.join(chapter_lines).strip()
 
         except Exception as e:
@@ -2647,7 +2653,7 @@ p {{
     def initialize_chapter_spacing(self):
         """챕터 여백(위/아래 <br> 태그) 기능을 초기화합니다."""
         logging.debug("챕터 여백 기능 초기화 시작")
-        
+
         try:
             # spinBox_Top 초기화
             if hasattr(self.ui, 'spinBox_Top'):
@@ -2656,7 +2662,7 @@ p {{
                 self.ui.spinBox_Top.setValue(0)  # 기본값 0개
                 self.ui.spinBox_Top.setSuffix(" 줄")
                 self.ui.spinBox_Top.setToolTip("챕터 위에 추가할 빈 줄 수")
-                
+
             # spinBox_Bottom 초기화
             if hasattr(self.ui, 'spinBox_Bottom'):
                 self.ui.spinBox_Bottom.setMinimum(0)
@@ -2664,16 +2670,16 @@ p {{
                 self.ui.spinBox_Bottom.setValue(0)  # 기본값 0개
                 self.ui.spinBox_Bottom.setSuffix(" 줄")
                 self.ui.spinBox_Bottom.setToolTip("챕터 아래에 추가할 빈 줄 수")
-                
+
             logging.debug("챕터 여백 기능 초기화 완료")
-            
+
         except Exception as e:
             logging.error(f"챕터 여백 기능 초기화 실패: {e}")
 
     def get_chapter_spacing_info(self):
         """
         챕터 여백 설정 정보를 수집합니다.
-        
+
         Returns:
             dict: 챕터 여백 설정 정보
         """
@@ -2681,19 +2687,19 @@ p {{
             'top_lines': 0,
             'bottom_lines': 0
         }
-        
+
         try:
             # 위쪽 빈 줄 수
             if hasattr(self.ui, 'spinBox_Top'):
                 spacing_info['top_lines'] = self.ui.spinBox_Top.value()
-                
+
             # 아래쪽 빈 줄 수
             if hasattr(self.ui, 'spinBox_Bottom'):
                 spacing_info['bottom_lines'] = self.ui.spinBox_Bottom.value()
-                
+
             logging.debug(f"챕터 여백 정보: {spacing_info}")
             return spacing_info
-            
+
         except Exception as e:
             logging.error(f"챕터 여백 정보 수집 실패: {e}")
             return spacing_info
@@ -2701,32 +2707,32 @@ p {{
     def apply_chapter_spacing(self, chapter_content, spacing_info):
         """
         챕터 내용에 위/아래 여백을 적용합니다.
-        
+
         Args:
             chapter_content (str): 원본 챕터 내용
             spacing_info (dict): 여백 설정 정보
-            
+
         Returns:
             str: 여백이 적용된 챕터 내용
         """
         try:
             content_with_spacing = chapter_content
-            
+
             # 위쪽 여백 추가
             if spacing_info['top_lines'] > 0:
                 top_spacing = '<br/>' * spacing_info['top_lines']
                 content_with_spacing = top_spacing + content_with_spacing
-                
+
             # 아래쪽 여백 추가
             if spacing_info['bottom_lines'] > 0:
                 bottom_spacing = '<br/>' * spacing_info['bottom_lines']
                 content_with_spacing = content_with_spacing + bottom_spacing
-                
+
             if spacing_info['top_lines'] > 0 or spacing_info['bottom_lines'] > 0:
                 logging.debug(f"챕터 여백 적용: 위 {spacing_info['top_lines']}줄, 아래 {spacing_info['bottom_lines']}줄")
-                
+
             return content_with_spacing
-            
+
         except Exception as e:
             logging.error(f"챕터 여백 적용 실패: {e}")
             return chapter_content
