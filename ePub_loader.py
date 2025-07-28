@@ -37,12 +37,12 @@ def load_chapter_regex_list():
 def load_punctuation_regex_list():
     """
     PunctuationRegex 테이블에서 괄호 정규식 조회
-    :return: [(id, name)]
+    :return: [(id, name, pattern)]
     """
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name
+            SELECT id, name, pattern
             FROM PunctuationRegex
             WHERE is_enabled = 1
             ORDER BY id
