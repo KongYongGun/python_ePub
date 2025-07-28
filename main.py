@@ -1933,7 +1933,7 @@ p {{
             for i, chapter in enumerate(chapters):
                 start_line = chapter['line_no'] - 1
                 end_line = chapters[i + 1]['line_no'] - 1 if i + 1 < len(chapters) else len(lines)
-                
+
                 # 제목 줄을 제외하고 본문만 추출 (start_line + 1부터 시작)
                 chapter_lines = lines[start_line + 1:end_line]
                 chapter['content'] = ''.join(chapter_lines).strip()
