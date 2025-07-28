@@ -22,18 +22,18 @@ from typing import Optional
 class EncodingDetectWorker(QThread):
     """
     텍스트 파일의 인코딩을 백그라운드에서 감지하는 워커 스레드입니다.
-    
+
     chardet 라이브러리를 사용하여 파일의 첫 8KB를 분석하고
     가장 가능성이 높은 인코딩을 감지합니다.
-    
+
     Signals:
         finished (str, str): 감지 완료 시 (파일경로, 인코딩) 전달
         error (str): 오류 발생 시 오류 메시지 전달
-        
+
     Attributes:
         file_path (str): 인코딩을 감지할 파일의 경로
     """
-    
+
     # PyQt6 신호 정의
     finished = pyqtSignal(str, str)  # file_path, encoding
     error = pyqtSignal(str)         # error_message
@@ -41,7 +41,7 @@ class EncodingDetectWorker(QThread):
     def __init__(self, file_path: str):
         """
         인코딩 감지 워커를 초기화합니다.
-        
+
         Args:
             file_path (str): 인코딩을 감지할 텍스트 파일의 경로
         """
@@ -51,13 +51,13 @@ class EncodingDetectWorker(QThread):
     def run(self):
         """
         워커 스레드의 메인 실행 함수입니다.
-        
+
         파일의 첫 8KB를 읽어 chardet으로 인코딩을 감지하고
         결과를 finished 신호로 전달하거나 오류 시 error 신호를 발생시킵니다.
-        
+
         Returns:
             None
-            
+
         Emits:
             finished: 인코딩 감지 성공 시 (파일경로, 인코딩)
             error: 인코딩 감지 실패 또는 오류 발생 시 오류 메시지
@@ -68,30 +68,30 @@ class EncodingDetectWorker(QThread):
             if not os.path.exists(self.file_path):
                 self.error.emit(f"파일을 찾을 수 없습니다: {self.file_path}")
                 return
-                
+
             # 파일 인코딩 감지
             with open(self.file_path, 'rb') as f:
                 sample = f.read(8192)  # 처음 8KB만 읽어서 성능 향상
-                
+
                 if not sample:
                     self.error.emit("파일이 비어있거나 읽을 수 없습니다.")
                     return
-                    
+
                 result = chardet.detect(sample)
                 encoding = result.get('encoding')
                 confidence = result.get('confidence', 0)
-                
+
                 if not encoding:
                     self.error.emit("인코딩을 감지할 수 없습니다.")
                     return
-                    
+
                 # 신뢰도가 너무 낮으면 경고
                 if confidence < 0.7:
                     logging.warning(f"인코딩 감지 신뢰도가 낮습니다: {confidence:.2f}")
-                
+
                 logging.info(f"인코딩 감지 완료: {encoding} (신뢰도: {confidence:.2f})")
                 self.finished.emit(self.file_path, encoding)
-                
+
         except PermissionError:
             error_msg = f"파일 접근 권한이 없습니다: {self.file_path}"
             logging.error(error_msg)

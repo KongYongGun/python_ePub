@@ -1,7 +1,7 @@
 """
 폰트 호환성 검사 워커 모듈
 
-텍스트 파일과 폰트 파일의 호환성을 백그라운드에서 분석하는 
+텍스트 파일과 폰트 파일의 호환성을 백그라운드에서 분석하는
 QThread 워커 클래스를 제공합니다.
 
 주요 기능:
@@ -31,16 +31,16 @@ from fontTools.ttLib import TTFont
 class FontCheckerWorker(QThread):
     """
     폰트 호환성 검사를 백그라운드에서 수행하는 워커 스레드입니다.
-    
+
     fontTools 라이브러리를 사용하여 폰트 파일에서 지원하는 문자셋을 추출하고,
     텍스트 파일에서 사용된 문자들과 비교하여 호환성을 분석합니다.
-    
+
     Signals:
         progress (int): 작업 진행률 (0-100%)
         status_update (str): 현재 작업 상태 메시지
         result_ready (dict): 분석 완료 시 결과 데이터
         error_occurred (str): 오류 발생 시 오류 메시지
-        
+
     Attributes:
         font_path (str): 분석할 폰트 파일 경로
         text_file_path (str): 분석할 텍스트 파일 경로
@@ -59,7 +59,7 @@ class FontCheckerWorker(QThread):
     def __init__(self, font_path: str, text_file_path: str, title: str = "", author: str = ""):
         """
         폰트 호환성 검사 워커를 초기화합니다.
-        
+
         Args:
             font_path (str): 분석할 폰트 파일의 경로
             text_file_path (str): 분석할 텍스트 파일의 경로
@@ -77,15 +77,15 @@ class FontCheckerWorker(QThread):
     def run(self):
         """
         워커 스레드의 메인 실행 함수입니다.
-        
+
         폰트 호환성 검사를 단계별로 수행하고 각 단계마다 진행률을 업데이트합니다:
         1. 폰트 파일에서 지원하는 문자셋 추출
         2. 텍스트 파일에서 사용된 문자 수집
         3. 호환성 분석 및 보고서 생성
-        
+
         Returns:
             None
-            
+
         Emits:
             progress: 각 단계별 진행률
             status_update: 현재 작업 상태
@@ -120,7 +120,7 @@ class FontCheckerWorker(QThread):
             # 2. 텍스트에서 사용된 문자 수집
             self.status_update.emit("텍스트 문자 수집 중...")
             used_chars = self._collect_text_characters()
-            
+
             if not used_chars:
                 error_msg = "텍스트 파일을 읽을 수 없거나 내용이 없습니다."
                 logging.error(error_msg)

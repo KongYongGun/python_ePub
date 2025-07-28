@@ -6,7 +6,7 @@ PyQt6 UI 컴포넌트에 로드하는 기능을 제공합니다.
 
 주요 기능:
 - 스타일시트(QSS) 테마 목록 조회
-- 챕터 정규식 패턴 목록 조회  
+- 챕터 정규식 패턴 목록 조회
 - 구두점 정규식 패턴 목록 조회
 - 콤보박스 위젯에 데이터 로드
 - 데이터베이스 연결 관리
@@ -28,10 +28,10 @@ DB_FILE = os.path.join(BASE_DIR, "epub_config.db")
 def get_connection():
     """
     SQLite 데이터베이스 연결 객체를 반환합니다.
-    
+
     Returns:
         sqlite3.Connection: SQLite 데이터베이스 연결 객체
-        
+
     Raises:
         sqlite3.Error: 데이터베이스 연결 실패 시
         FileNotFoundError: 데이터베이스 파일이 존재하지 않을 시
@@ -47,10 +47,10 @@ def get_connection():
 def load_stylesheet_list():
     """
     Stylesheet 테이블에서 QSS 테마 목록을 조회합니다.
-    
+
     Returns:
         List[Tuple[int, str]]: (id, name) 형태의 튜플 리스트
-        
+
     Raises:
         sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
     """
@@ -66,10 +66,10 @@ def load_stylesheet_list():
 def load_chapter_regex_list():
     """
     ChapterRegex 테이블에서 활성화된 챕터 정규식 패턴 목록을 조회합니다.
-    
+
     Returns:
         List[Tuple[int, str, str, str]]: (id, name, example, pattern) 형태의 튜플 리스트
-        
+
     Raises:
         sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
     """
@@ -90,10 +90,10 @@ def load_chapter_regex_list():
 def load_punctuation_regex_list():
     """
     PunctuationRegex 테이블에서 활성화된 구두점 정규식 패턴 목록을 조회합니다.
-    
+
     Returns:
         List[Tuple[int, str, str]]: (id, name, pattern) 형태의 튜플 리스트
-        
+
     Raises:
         sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
     """

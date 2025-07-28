@@ -403,6 +403,9 @@ class MainWindow(QMainWindow):
         # 괄호 스타일 기능 초기화
         self.initialize_bracket_styling()
 
+        # 챕터 스타일 기능 초기화
+        self.initialize_chapter_styling()
+
         # 폰트 콤보박스 초기화
         self.initialize_font_comboboxes()
 
@@ -1720,6 +1723,12 @@ p {{
 
                 content = '\n'.join(content_parts) if content_parts else '<p></p>'
 
+                # 챕터 스타일 정보 가져오기
+                chapter_style_info = self.get_chapter_style_info()
+                
+                # 챕터 제목에 스타일 적용
+                styled_chapter_title = self.apply_chapter_title_style(chapter['title'], chapter_style_info)
+
                 chapter_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -1728,7 +1737,7 @@ p {{
     <link rel="stylesheet" type="text/css" href="Styles/style.css"/>
 </head>
 <body>
-    <div class="chapter-title">{chapter['title']}</div>
+    {styled_chapter_title}
     {content}
 </body>
 </html>'''
@@ -1745,6 +1754,12 @@ p {{
                 if content:
                     content = f'<p>{content}</p>'
 
+                # 챕터 스타일 정보 가져오기 (오류 발생 시에도 적용)
+                chapter_style_info = self.get_chapter_style_info()
+                
+                # 챕터 제목에 스타일 적용
+                styled_chapter_title = self.apply_chapter_title_style(chapter['title'], chapter_style_info)
+
                 chapter_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -1753,7 +1768,7 @@ p {{
     <link rel="stylesheet" type="text/css" href="Styles/style.css"/>
 </head>
 <body>
-    <div class="chapter-title">{chapter['title']}</div>
+    {styled_chapter_title}
     {content}
 </body>
 </html>'''
@@ -2063,6 +2078,167 @@ p {{
 
         except Exception as e:
             logging.error(f"괄호 컴포넌트 {index} 상태 업데이트 실패: {e}")
+
+    # ==================================================================================
+    # 챕터 스타일링 기능
+    # ==================================================================================
+
+    def initialize_chapter_styling(self):
+        """챕터 스타일 기능을 초기화합니다."""
+        logging.debug("챕터 스타일 기능 초기화 시작")
+        
+        try:
+            # comboBox_ChapterSize 초기화
+            if hasattr(self.ui, 'comboBox_ChapterSize'):
+                self.ui.comboBox_ChapterSize.clear()
+                chapter_sizes = [
+                    ("<H1>", "H1"),
+                    ("<H2>", "H2"), 
+                    ("<H3>", "H3"),
+                    ("<H4>", "H4"),
+                    ("<H5>", "H5"),
+                    ("<H6>", "H6")
+                ]
+                
+                for display_text, data_value in chapter_sizes:
+                    self.ui.comboBox_ChapterSize.addItem(display_text, data_value)
+                
+                # 기본값을 <H4>로 설정
+                default_index = self.ui.comboBox_ChapterSize.findData("H4")
+                if default_index >= 0:
+                    self.ui.comboBox_ChapterSize.setCurrentIndex(default_index)
+                    
+            # comboBox_ChapterAlign 초기화  
+            if hasattr(self.ui, 'comboBox_ChapterAlign'):
+                self.ui.comboBox_ChapterAlign.clear()
+                chapter_aligns = [
+                    ("<왼쪽>", "Left"),
+                    ("<가운데>", "Center"),
+                    ("<오른쪽>", "Right")
+                ]
+                
+                for display_text, data_value in chapter_aligns:
+                    self.ui.comboBox_ChapterAlign.addItem(display_text, data_value)
+                
+                # 기본값을 <왼쪽>으로 설정
+                default_index = self.ui.comboBox_ChapterAlign.findData("Left")
+                if default_index >= 0:
+                    self.ui.comboBox_ChapterAlign.setCurrentIndex(default_index)
+                    
+            # checkBox_ChapterStyle 이벤트 연결
+            if hasattr(self.ui, 'checkBox_ChapterStyle'):
+                self.ui.checkBox_ChapterStyle.toggled.connect(self.on_chapter_style_checkbox_toggled)
+                
+            # 초기 컴포넌트 상태 설정
+            self.update_chapter_components_state()
+            
+            logging.debug("챕터 스타일 기능 초기화 완료")
+            
+        except Exception as e:
+            logging.error(f"챕터 스타일 기능 초기화 실패: {e}")
+
+    def on_chapter_style_checkbox_toggled(self, checked):
+        """챕터 스타일 체크박스 토글 이벤트 처리"""
+        logging.debug(f"챕터 스타일 체크박스 토글: {checked}")
+        self.update_chapter_components_state()
+
+    def update_chapter_components_state(self):
+        """챕터 스타일 관련 컴포넌트들의 활성화 상태를 업데이트합니다."""
+        try:
+            # checkBox_ChapterStyle 상태 확인
+            chapter_style_enabled = False
+            if hasattr(self.ui, 'checkBox_ChapterStyle'):
+                checkbox = self.ui.checkBox_ChapterStyle
+                chapter_style_enabled = checkbox.isChecked()
+                
+            # comboBox_ChapterSize 활성화/비활성화
+            if hasattr(self.ui, 'comboBox_ChapterSize'):
+                self.ui.comboBox_ChapterSize.setEnabled(chapter_style_enabled)
+                
+            # comboBox_ChapterAlign 활성화/비활성화  
+            if hasattr(self.ui, 'comboBox_ChapterAlign'):
+                self.ui.comboBox_ChapterAlign.setEnabled(chapter_style_enabled)
+                
+            logging.debug(f"챕터 스타일 컴포넌트 상태 업데이트: {chapter_style_enabled}")
+            
+        except Exception as e:
+            logging.error(f"챕터 스타일 컴포넌트 상태 업데이트 실패: {e}")
+
+    def get_chapter_style_info(self):
+        """
+        챕터 스타일 정보를 수집합니다.
+        
+        Returns:
+            dict: 챕터 스타일 정보 딕셔너리
+        """
+        style_info = {
+            'enabled': False,
+            'size': 'H4',
+            'align': 'Left'
+        }
+        
+        try:
+            # 스타일 활성화 여부 확인
+            if hasattr(self.ui, 'checkBox_ChapterStyle'):
+                style_info['enabled'] = self.ui.checkBox_ChapterStyle.isChecked()
+                
+            # 챕터 크기 정보
+            if hasattr(self.ui, 'comboBox_ChapterSize'):
+                size_data = self.ui.comboBox_ChapterSize.currentData()
+                if size_data:
+                    style_info['size'] = size_data
+                    
+            # 챕터 정렬 정보  
+            if hasattr(self.ui, 'comboBox_ChapterAlign'):
+                align_data = self.ui.comboBox_ChapterAlign.currentData()
+                if align_data:
+                    style_info['align'] = align_data
+                    
+            logging.debug(f"챕터 스타일 정보: {style_info}")
+            return style_info
+            
+        except Exception as e:
+            logging.error(f"챕터 스타일 정보 수집 실패: {e}")
+            return style_info
+
+    def apply_chapter_title_style(self, title, style_info):
+        """
+        챕터 제목에 스타일을 적용합니다.
+        
+        Args:
+            title (str): 원본 챕터 제목
+            style_info (dict): 챕터 스타일 정보
+            
+        Returns:
+            str: 스타일이 적용된 챕터 제목 HTML
+        """
+        try:
+            if not style_info['enabled']:
+                # 스타일이 비활성화된 경우 기본 div 태그 사용
+                return f'<div class="chapter-title">{title}</div>'
+                
+            # HTML 태그 및 CSS 클래스 설정
+            tag = style_info['size'].lower()  # H1, H2, H3, H4, H5, H6 -> h1, h2, h3, h4, h5, h6
+            
+            # 정렬 스타일 CSS 클래스 매핑
+            align_mapping = {
+                'Left': 'text-align: left;',
+                'Center': 'text-align: center;',
+                'Right': 'text-align: right;'
+            }
+            
+            align_style = align_mapping.get(style_info['align'], 'text-align: left;')
+            
+            # 스타일이 적용된 챕터 제목 HTML 생성
+            styled_title = f'<{tag} class="chapter-title" style="{align_style}">{title}</{tag}>'
+            
+            logging.debug(f"챕터 제목 스타일 적용: {title} -> {styled_title}")
+            return styled_title
+            
+        except Exception as e:
+            logging.error(f"챕터 제목 스타일 적용 실패: {e}")
+            # 오류 발생 시 기본 형태로 반환
+            return f'<div class="chapter-title">{title}</div>'
 
     def on_chars_checkbox_toggled(self, index, checked):
         """문자 체크박스 토글 이벤트 처리"""

@@ -1,7 +1,7 @@
 """
 ePub 변환 및 품질 검증 모듈
 
-텍스트 파일을 완전한 ePub 3.0 형식으로 변환하고 품질을 검증하는 
+텍스트 파일을 완전한 ePub 3.0 형식으로 변환하고 품질을 검증하는
 핵심 모듈입니다.
 
 주요 기능:
@@ -50,10 +50,10 @@ import io
 class EpubQualityValidator:
     """
     ePub 파일의 품질과 표준 준수를 검증하는 클래스입니다.
-    
+
     ePub 3.0 표준에 따라 파일 구조, 메타데이터, 내용을 분석하고
     문제점이나 개선사항을 식별하여 보고서를 생성합니다.
-    
+
     검증 항목:
     - 파일 크기 및 구조 유효성
     - 메타데이터 완성도
@@ -61,7 +61,7 @@ class EpubQualityValidator:
     - 이미지 및 폰트 파일 유효성
     - CSS 스타일시트 문법
     - 접근성 준수 사항
-    
+
     Attributes:
         main_window: 메인 윈도우 참조 (로깅용)
         issues (List[str]): 발견된 문제점 목록
@@ -70,7 +70,7 @@ class EpubQualityValidator:
     def __init__(self, main_window):
         """
         ePub 품질 검증기를 초기화합니다.
-        
+
         Args:
             main_window: 메인 윈도우 객체 (로깅 메서드 사용)
         """
@@ -80,16 +80,16 @@ class EpubQualityValidator:
     def validate_epub_file(self, epub_path: str) -> List[str]:
         """
         ePub 파일의 품질을 종합적으로 검증합니다.
-        
+
         파일 구조, 메타데이터, 내용, 표준 준수 등을 체크하여
         문제점 목록을 반환합니다.
-        
+
         Args:
             epub_path (str): 검증할 ePub 파일 경로
-            
+
         Returns:
             List[str]: 발견된 문제점 및 개선사항 목록
-            
+
         Raises:
             FileNotFoundError: ePub 파일이 존재하지 않을 때
             zipfile.BadZipFile: ePub 파일이 손상되었을 때
@@ -107,7 +107,7 @@ class EpubQualityValidator:
             # 1. 파일 크기 검증
             self._check_file_size(epub_path)
 
-            # 2. 파일 구조 검증  
+            # 2. 파일 구조 검증
             self._check_file_structure(epub_path)
 
             # 3. 메타데이터 검증

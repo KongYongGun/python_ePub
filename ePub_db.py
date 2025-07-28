@@ -33,14 +33,14 @@ DB_FILE = os.path.join(BASE_DIR, "epub_config.db")
 def table_exists(cursor, table_name):
     """
     데이터베이스에서 지정된 테이블의 존재 여부를 확인합니다.
-    
+
     Args:
         cursor (sqlite3.Cursor): SQLite 커서 객체
         table_name (str): 확인할 테이블명
-        
+
     Returns:
         bool: 테이블이 존재하면 True, 그렇지 않으면 False
-        
+
     Raises:
         sqlite3.Error: 데이터베이스 쿼리 실행 중 오류 발생 시
     """
@@ -57,20 +57,20 @@ def table_exists(cursor, table_name):
 def initialize_database():
     """
     ePub 변환기의 SQLite 데이터베이스를 초기화합니다.
-    
+
     데이터베이스 파일이 존재하지 않으면 새로 생성하고,
     필요한 모든 테이블과 기본 데이터를 설정합니다.
-    
+
     생성되는 테이블:
     - Stylesheet: QSS 테마 스타일 저장
     - ChapterRegex: 챕터 구분용 정규식 패턴
     - PunctuationRegex: 구두점 스타일링용 정규식
     - FontInfo: 폰트 정보 및 설정
     - EpubMeta: ePub 메타데이터 기본값
-    
+
     Returns:
         None
-        
+
     Raises:
         sqlite3.Error: 데이터베이스 연결 또는 테이블 생성 중 오류 발생 시
         OSError: 데이터베이스 파일 생성 권한 없음
@@ -87,7 +87,7 @@ def initialize_database():
 
         # 각 테이블별로 존재 여부 확인 후 생성
         tables_created = []
-    
+
     except sqlite3.Error as e:
         logging.error(f"데이터베이스 초기화 중 오류 발생: {e}")
         raise
