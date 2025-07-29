@@ -62,8 +62,10 @@ class ChapterFinderWorker(QThread):
         매치되는 줄을 찾을 때마다 chapter_found 신호를 발생시킵니다.
         진행률은 progress 신호로, 완료 시에는 finished 신호를 발생시킵니다.
         
-        정규식 매칭은 줄의 시작부터 패턴과 일치하는지 확인합니다 (re.match 사용).
-        이는 줄의 중간에서 매치되는 것을 방지하고, 줄 단위로 정확한 매칭을 보장합니다.
+        매칭 처리 방식:
+        1. 각 줄의 앞뒤 공백을 제거 (strip() 사용)
+        2. 공백이 제거된 줄에 대해 정규식 패턴을 줄 시작부터 매칭 (re.match 사용)
+        3. 줄의 중간에서 매치되는 것을 방지하여 정확한 챕터 제목만 인식
 
         Returns:
             None
@@ -98,16 +100,17 @@ class ChapterFinderWorker(QThread):
 
                 # 각 줄에 대해 패턴 매치 검사
                 for i, line in enumerate(lines):
+                    # 줄의 앞뒤 공백 제거 (탭, 스페이스 등 모든 공백 문자)
                     line_stripped = line.strip()
 
                     # 빈 줄은 건너뛰기
                     if not line_stripped:
                         continue
 
-                    # 정규식 매치 검사 - 줄 전체가 패턴과 일치하는지 확인
+                    # 정규식 매치 검사 - 공백이 제거된 줄이 패턴과 줄 시작부터 일치하는지 확인
                     if pattern.match(line_stripped):
                         total_found += 1
-                        logging.debug(f"챕터 발견: 라인 {i+1} - {line_stripped[:50]}...")
+                        logging.debug(f"챕터 발견: 라인 {i+1} - 원본: '{line}' -> 처리됨: '{line_stripped[:50]}...'")
                         self.chapter_found.emit(i + 1, line_stripped, regex_name, pattern_str)
 
                     # 진행률 업데이트 (20줄마다)
