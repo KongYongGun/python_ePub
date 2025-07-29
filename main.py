@@ -121,6 +121,10 @@ class MainWindow(QMainWindow):
         logging.debug("정렬 콤보박스 초기화 완료")
         self.print_alignment_settings()
 
+        # 사용자 정의 색상 팔레트 초기화
+        self.setup_custom_color_palette()
+        logging.debug("사용자 정의 색상 팔레트 설정 완료")
+
         # 버튼 이벤트 연결
         self._connect_button_events()
 
@@ -601,11 +605,42 @@ class MainWindow(QMainWindow):
         except:
             return False
 
+    def setup_custom_color_palette(self):
+        """ePub 편집에 적합한 사용자 정의 색상 팔레트를 설정합니다."""
+        # ePub 텍스트에 자주 사용되는 색상 팔레트 설정
+        custom_colors = [
+            "#000000",  # 검은색 (기본 텍스트)
+            "#FFFFFF",  # 흰색 (배경)
+            "#333333",  # 진한 회색 (제목)
+            "#666666",  # 중간 회색 (부제목)
+            "#999999",  # 밝은 회색 (설명)
+            "#FF0000",  # 빨간색 (강조)
+            "#0000FF",  # 파란색 (링크)
+            "#800080",  # 보라색 (방문한 링크)
+            "#008000",  # 초록색 (성공, 확인)
+            "#FF6600",  # 주황색 (경고)
+            "#8B4513",  # 갈색 (고전적)
+            "#4B0082",  # 남색 (깊은 파란색)
+            "#2F4F4F",  # 어두운 슬레이트 회색
+            "#CD853F",  # 페루 (따뜻한 갈색)
+            "#708090",  # 슬레이트 회색
+            "#F5F5DC"   # 베이지 (부드러운 배경)
+        ]
+
+        # 사용자 정의 색상을 QColorDialog에 설정
+        for i, color_hex in enumerate(custom_colors):
+            if i < 16:  # QColorDialog는 최대 16개의 사용자 정의 색상 지원
+                color = QColor(color_hex)
+                QColorDialog.setCustomColor(i, color.rgb())
+
     def on_color_lineedit_clicked(self, lineedit_name):
         """색상 LineEdit가 클릭되었을 때 색상 선택 다이얼로그를 엽니다."""
         if hasattr(self.ui, lineedit_name):
             lineedit = getattr(self.ui, lineedit_name)
             current_color = lineedit.text()
+
+            # 사용자 정의 색상 팔레트 설정
+            self.setup_custom_color_palette()
 
             # QColorDialog로 색상 선택
             color = QColorDialog.getColor(QColor(current_color), self, f"{lineedit_name} 색상 선택")
