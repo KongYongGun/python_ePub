@@ -3495,11 +3495,9 @@ p {{
 숫자: 0123456789
 특수문자: !@#$%^&*()_+-=[]{{}}|;':",./<>?`~"""
                     self.ui.label_BodyFontExample.setText(sample_text)
+                    logging.debug(f"본문 폰트 예시 업데이트 완료: {font_family}")
                 else:
                     QMessageBox.warning(self, "폰트 로드 실패", "선택한 폰트를 로드할 수 없습니다.")
-
-            # 콤보박스에서 해당 폰트 선택 (동기화)
-            self.sync_combobox_selection(self.ui.comboBox_SelectBodyFont, file_path)
 
             # 백그라운드에서 폰트 호환성 확인
             self.start_background_font_check(file_path, "본문 폰트")
@@ -3533,35 +3531,12 @@ p {{
 숫자: 0123456789
 특수문자: !@#$%^&*()_+-=[]{{}}|;':",./<>?`~"""
                     self.ui.label_ChapterFontExample.setText(sample_text)
+                    logging.debug(f"챕터 폰트 예시 업데이트 완료: {font_family}")
                 else:
                     QMessageBox.warning(self, "폰트 로드 실패", "선택한 폰트를 로드할 수 없습니다.")
 
-            # 콤보박스에서 해당 폰트 선택 (동기화)
-            self.sync_combobox_selection(self.ui.comboBox_SelectChapterFont, file_path)
-
             # 백그라운드에서 폰트 호환성 확인
             self.start_background_font_check(file_path, "챕터 폰트")
-
-    def sync_combobox_selection(self, combobox, file_path):
-        """콤보박스에서 지정된 파일 경로에 해당하는 항목을 선택합니다."""
-        try:
-            # 콤보박스에서 일치하는 데이터를 가진 항목 찾기
-            for i in range(combobox.count()):
-                item_data = combobox.itemData(i)
-                if item_data == file_path:
-                    # 신호 연결을 일시적으로 차단하여 중복 실행 방지
-                    combobox.blockSignals(True)
-                    combobox.setCurrentIndex(i)
-                    combobox.blockSignals(False)
-                    logging.debug(f"콤보박스에서 폰트 선택됨: {combobox.currentText()}")
-                    return True
-            
-            # 일치하는 항목이 없는 경우 로그 출력
-            logging.warning(f"콤보박스에서 해당 폰트를 찾을 수 없음: {os.path.basename(file_path)}")
-            return False
-        except Exception as e:
-            logging.error(f"콤보박스 동기화 실패: {e}")
-            return False
 
     def start_background_font_check(self, font_path, font_type):
         """백그라운드에서 폰트 호환성 확인을 시작합니다."""
@@ -4064,23 +4039,6 @@ p {{
 
             print(f"[INFO] 챕터 폰트 선택: {os.path.basename(font_path)}")
 
-    def select_body_font(self):
-        """본문 폰트를 개별 파일로 선택합니다. (기존 방식 유지)"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "본문 폰트 선택", "",
-            "Font Files (*.ttf *.otf *.woff *.woff2);;All Files (*)"
-        )
-        if file_path and hasattr(self.ui, 'label_BodyFontPath'):
-            self.ui.label_BodyFontPath.setText(file_path)
-
-    def select_chapter_font(self):
-        """챕터 폰트를 개별 파일로 선택합니다. (기존 방식 유지)"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "챕터 폰트 선택", "",
-            "Font Files (*.ttf *.otf *.woff *.woff2);;All Files (*)"
-        )
-        if file_path and hasattr(self.ui, 'label_ChapterFontPath'):
-            self.ui.label_ChapterFontPath.setText(file_path)
 
 
 if __name__ == "__main__":
