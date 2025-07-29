@@ -3784,25 +3784,66 @@ p {{
             QMessageBox.critical(self, "오류", message)
 
     def get_font_files_from_folder(self, folder_path):
-        """폴더에서 폰트 파일 목록을 반환합니다."""
+        """폴더에서 폰트 파일 목록을 반환합니다. (하위 폴더 포함 재귀 검색)"""
         font_extensions = ['.ttf', '.otf', '.woff', '.woff2']
         font_files = []
 
         try:
-            for file_name in os.listdir(folder_path):
-                file_ext = os.path.splitext(file_name)[1].lower()
-                if file_ext in font_extensions:
-                    font_files.append({
-                        'name': os.path.splitext(file_name)[0],
-                        'path': os.path.join(folder_path, file_name),
-                        'filename': file_name
-                    })
+            # os.walk를 사용하여 하위 폴더까지 재귀적으로 검색
+            for root, dirs, files in os.walk(folder_path):
+                for file_name in files:
+                    file_ext = os.path.splitext(file_name)[1].lower()
+                    if file_ext in font_extensions:
+                        full_path = os.path.join(root, file_name)
+                        # 상대 경로로 폴더 구조 표시
+                        relative_path = os.path.relpath(root, folder_path)
+                        if relative_path == '.':
+                            display_name = os.path.splitext(file_name)[0]
+                        else:
+                            display_name = f"{relative_path}/{os.path.splitext(file_name)[0]}"
+                        
+                        font_files.append({
+                            'name': os.path.splitext(file_name)[0],
+                            'display_name': display_name,
+                            'path': full_path,
+                            'filename': file_name,
+                            'folder': relative_path if relative_path != '.' else ''
+                        })
         except Exception as e:
             print(f"폰트 파일 검색 중 오류: {str(e)}")
 
-        # 이름순으로 정렬
-        font_files.sort(key=lambda x: x['name'])
+        # 폴더, 한글, 영문, 숫자 순으로 정렬
+        font_files.sort(key=self._get_font_sort_key)
         return font_files
+
+    def _get_font_sort_key(self, font_info):
+        """폰트 정렬을 위한 키 생성: 폴더, 한글, 영문, 숫자 순"""
+        import re
+        
+        display_name = font_info['display_name']
+        folder = font_info['folder']
+        
+        # 폴더 우선순위 (빈 문자열이면 루트 폴더)
+        folder_priority = 0 if not folder else 1
+        
+        # 파일명에서 첫 글자 추출
+        name_only = os.path.basename(display_name)
+        if not name_only:
+            return (folder_priority, folder, 3, display_name)  # 빈 문자열 처리
+        
+        first_char = name_only[0]
+        
+        # 문자 타입별 우선순위 결정
+        if re.match(r'[가-힣]', first_char):  # 한글
+            char_priority = 0
+        elif re.match(r'[a-zA-Z]', first_char):  # 영문
+            char_priority = 1  
+        elif re.match(r'[0-9]', first_char):  # 숫자
+            char_priority = 2
+        else:  # 기타 문자
+            char_priority = 3
+            
+        return (folder_priority, folder, char_priority, display_name)
 
     def load_fonts_from_folder(self, folder_path):
         """폴더의 폰트들을 콤보박스에 로드합니다."""
@@ -3831,9 +3872,9 @@ p {{
                 if font_families:
                     font_family = font_families[0]
 
-                    # 콤보박스에 항목 추가
-                    self.ui.comboBox_SelectBodyFont.addItem(font_info['name'], font_info['path'])
-                    self.ui.comboBox_SelectChapterFont.addItem(font_info['name'], font_info['path'])
+                    # 콤보박스에 항목 추가 (display_name 사용으로 폴더 구조 표시)
+                    self.ui.comboBox_SelectBodyFont.addItem(font_info['display_name'], font_info['path'])
+                    self.ui.comboBox_SelectChapterFont.addItem(font_info['display_name'], font_info['path'])
 
                     # 현재 추가된 항목의 인덱스
                     body_index = self.ui.comboBox_SelectBodyFont.count() - 1
@@ -3844,9 +3885,9 @@ p {{
                     self.ui.comboBox_SelectBodyFont.setItemData(body_index, font, Qt.ItemDataRole.FontRole)
                     self.ui.comboBox_SelectChapterFont.setItemData(chapter_index, font, Qt.ItemDataRole.FontRole)
             else:
-                # 폰트 등록 실패 시 기본 폰트로 추가
-                self.ui.comboBox_SelectBodyFont.addItem(font_info['name'], font_info['path'])
-                self.ui.comboBox_SelectChapterFont.addItem(font_info['name'], font_info['path'])
+                # 폰트 등록 실패 시 기본 폰트로 추가 (display_name 사용)
+                self.ui.comboBox_SelectBodyFont.addItem(font_info['display_name'], font_info['path'])
+                self.ui.comboBox_SelectChapterFont.addItem(font_info['display_name'], font_info['path'])
 
         # 이벤트 연결
         self.ui.comboBox_SelectBodyFont.currentTextChanged.connect(self.on_body_font_changed)
