@@ -69,6 +69,9 @@ from encoding_worker import EncodingDetectWorker
 from chapter_finder import ChapterFinderWorker
 from font_checker_worker import FontCheckerWorker
 
+# ePub 변환기
+from epub_converter import EpubConverter
+
 # 스타일 매니저 (선택적 사용)
 from style_manager import StyleManager
 
@@ -1169,13 +1172,6 @@ class MainWindow(QMainWindow):
         """
         실제 ePub 파일을 생성합니다.
 
-        주요 과정:
-        1. 기존 파일 백업 (존재하는 경우)
-        2. 임시 디렉토리 생성
-        3. ePub 구조 생성
-        4. ZIP 패키징
-        5. 임시 파일 정리
-
         Args:
             save_path (str): ePub 파일을 저장할 경로
 
@@ -1186,30 +1182,24 @@ class MainWindow(QMainWindow):
         try:
             logging.info(f"ePub 파일 생성 시작: {save_path}")
 
-            # 기존 파일 백업
-            backup_path = self._create_backup_if_exists(save_path)
-            if backup_path:
+            # 기존 파일 백업 (존재하는 경우)
+            if os.path.exists(save_path):
+                backup_dir = os.path.join(os.path.dirname(save_path), "backup")
+                os.makedirs(backup_dir, exist_ok=True)
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                original_name = os.path.basename(save_path)
+                backup_filename = f"{timestamp}_{original_name}"
+                backup_path = os.path.join(backup_dir, backup_filename)
+                
+                shutil.copy2(save_path, backup_path)
                 logging.info(f"기존 파일 백업 완료: {backup_path}")
 
-            # 임시 디렉토리 생성
-            temp_dir = os.path.join(os.path.dirname(save_path), f"temp_epub_{uuid.uuid4().hex[:8]}")
-            os.makedirs(temp_dir, exist_ok=True)
-            logging.debug(f"임시 디렉토리 생성: {temp_dir}")
+            # ePub 변환기를 사용하여 ePub 생성
+            converter = EpubConverter(self)
+            converter.convert_to_epub(save_path)
 
-            try:
-                # ePub 구조 생성
-                self.create_epub_structure(temp_dir)
-
-                # ZIP 패키징
-                self.create_zip_epub(temp_dir, save_path)
-
-                logging.info(f"ePub 파일 생성 완료: {save_path}")
-
-            finally:
-                # 임시 디렉토리 정리
-                if os.path.exists(temp_dir):
-                    shutil.rmtree(temp_dir)
-                    logging.debug(f"임시 디렉토리 삭제: {temp_dir}")
+            logging.info(f"ePub 파일 생성 완료: {save_path}")
 
         except Exception as e:
             logging.error(f"ePub 파일 생성 중 오류 발생: {e}")
@@ -1329,9 +1319,28 @@ class MainWindow(QMainWindow):
             str: 챕터 내용
         """
         try:
-            # 전체 텍스트 가져오기
-            full_text = self.ui.textEdit_Text.toPlainText()
-            lines = full_text.split('\n')
+            # 텍스트 파일에서 직접 읽어오기
+            text_file_path = self.ui.label_TextFilePath.text().strip()
+            if not text_file_path or not os.path.exists(text_file_path):
+                logging.warning(f"텍스트 파일이 없음: {text_file_path}")
+                return f"챕터 {chapter_index + 1} 내용"
+
+            # 파일 인코딩 감지
+            try:
+                with open(text_file_path, 'rb') as f:
+                    raw_data = f.read()
+                    encoding_result = chardet.detect(raw_data)
+                    encoding = encoding_result.get('encoding', 'utf-8')
+            except Exception as e:
+                logging.warning(f"인코딩 감지 실패, UTF-8 사용: {e}")
+                encoding = 'utf-8'
+
+            # 파일 읽기
+            with open(text_file_path, 'r', encoding=encoding) as f:
+                lines = f.readlines()
+
+            # 각 라인의 끝에 있는 \n 제거
+            lines = [line.rstrip('\n') for line in lines]
 
             # 시작 라인 인덱스 (1-based -> 0-based)
             start_idx = max(0, start_line - 1)
