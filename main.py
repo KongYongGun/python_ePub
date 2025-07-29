@@ -420,6 +420,8 @@ class MainWindow(QMainWindow):
     def initialize_alignment_comboboxes(self):
         """정렬 콤보박스들을 초기화합니다."""
         alignment_options = [
+            ("일반", "Normal"),
+            ("None", "None"),
             ("왼쪽 정렬", "Left"),
             ("가운데 정렬", "Center"),
             ("오른쪽 정렬", "Right"),
@@ -436,6 +438,8 @@ class MainWindow(QMainWindow):
                 combo.clear()
                 for display_text, code_value in alignment_options:
                     combo.addItem(display_text, code_value)
+                # 기본값을 "일반"으로 설정
+                combo.setCurrentIndex(0)
                 # 변경 시그널 연결
                 combo.currentTextChanged.connect(
                     lambda _, name=combo_name: self.on_alignment_changed(name)
@@ -449,6 +453,8 @@ class MainWindow(QMainWindow):
                 combo.clear()
                 for display_text, code_value in alignment_options:
                     combo.addItem(display_text, code_value)
+                # 기본값을 "일반"으로 설정
+                combo.setCurrentIndex(0)
                 # 변경 시그널 연결
                 combo.currentTextChanged.connect(
                     lambda _, name=combo_name: self.on_alignment_changed(name)
@@ -2582,13 +2588,23 @@ p {{
             align_mapping = {
                 'Left': 'text-align: left;',
                 'Center': 'text-align: center;',
-                'Right': 'text-align: right;'
+                'Right': 'text-align: right;',
+                'Indent1': 'text-align: left; margin-left: 1em;',
+                'Indent2': 'text-align: left; margin-left: 2em;',
+                'Indent3': 'text-align: left; margin-left: 3em;'
             }
 
-            align_style = align_mapping.get(style_info['align'], 'text-align: left;')
+            # "Normal"과 "None"은 기본 정렬을 사용 (스타일 미적용)
+            if style_info['align'] in ['Normal', 'None']:
+                align_style = ''
+            else:
+                align_style = align_mapping.get(style_info['align'], '')
 
             # 스타일이 적용된 챕터 제목 HTML 생성
-            styled_title = f'<{tag} class="chapter-title" style="{align_style}">{title}</{tag}>'
+            if align_style:
+                styled_title = f'<{tag} class="chapter-title" style="{align_style}">{title}</{tag}>'
+            else:
+                styled_title = f'<{tag} class="chapter-title">{title}</{tag}>'
 
             logging.debug(f"챕터 제목 스타일 적용: {title} -> {styled_title}")
             return styled_title
@@ -3082,6 +3098,13 @@ p {{
                     styles.append("text-align: right")
                 elif alignment == "Justify":
                     styles.append("text-align: justify")
+                elif alignment == "Indent1":
+                    styles.append("text-align: left; margin-left: 1em")
+                elif alignment == "Indent2":
+                    styles.append("text-align: left; margin-left: 2em")
+                elif alignment == "Indent3":
+                    styles.append("text-align: left; margin-left: 3em")
+                # "Normal"과 "None"은 스타일을 적용하지 않음 (기본값 사용)
 
             # 굵기 스타일 적용
             if style_info.get('weight'):
