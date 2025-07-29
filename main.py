@@ -420,8 +420,7 @@ class MainWindow(QMainWindow):
     def initialize_alignment_comboboxes(self):
         """정렬 콤보박스들을 초기화합니다."""
         alignment_options = [
-            ("일반", "Normal"),
-            ("None", "None"),
+            ("일반", "None"),
             ("왼쪽 정렬", "Left"),
             ("가운데 정렬", "Center"),
             ("오른쪽 정렬", "Right"),
@@ -2594,8 +2593,8 @@ p {{
                 'Indent3': 'text-align: left; margin-left: 3em;'
             }
 
-            # "Normal"과 "None"은 기본 정렬을 사용 (스타일 미적용)
-            if style_info['align'] in ['Normal', 'None']:
+            # "None"(일반)은 기본 정렬을 사용 (스타일 미적용)
+            if style_info['align'] == 'None':
                 align_style = ''
             else:
                 align_style = align_mapping.get(style_info['align'], '')
@@ -3104,7 +3103,7 @@ p {{
                     styles.append("text-align: left; margin-left: 2em")
                 elif alignment == "Indent3":
                     styles.append("text-align: left; margin-left: 3em")
-                # "Normal"과 "None"은 스타일을 적용하지 않음 (기본값 사용)
+                # "None"(일반)은 스타일을 적용하지 않음 (기본값 사용)
 
             # 굵기 스타일 적용
             if style_info.get('weight'):
