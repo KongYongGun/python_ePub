@@ -3023,6 +3023,14 @@ p {{
 
             logging.debug(f"문자 스타일 {index} 적용 대상 라인 발견: '{line.strip()}'")
 
+            # 구분선 별도 체크박스 확인
+            use_divide_checkbox_name = f"checkBox_useDivide{index}"
+            if hasattr(self.ui, use_divide_checkbox_name):
+                use_divide_checkbox = getattr(self.ui, use_divide_checkbox_name)
+                if use_divide_checkbox.isChecked():
+                    # Heavy Sparkle 구분선을 스타일과 함께 적용
+                    return self.apply_heavy_sparkle_divider(index)
+
             # 스타일 정보 수집
             style_info = self.get_character_style_info(index)
 
@@ -3035,6 +3043,84 @@ p {{
         except Exception as e:
             logging.error(f"단일 문자 스타일 {index} 적용 실패: {e}")
             return line
+
+    def apply_heavy_sparkle_divider(self, index):
+        """
+        Heavy Sparkle 구분선을 생성하고 스타일을 적용합니다.
+
+        Args:
+            index (int): 문자 스타일 인덱스 (1-7)
+
+        Returns:
+            str: 스타일이 적용된 Heavy Sparkle 구분선 HTML
+        """
+        try:
+            # 스타일 정보 수집
+            style_info = self.get_character_style_info(index)
+            
+            # Heavy Sparkle 구분선 기본 HTML
+            heavy_sparkle_content = "❋ ❋ ❋"
+            
+            # CSS 스타일 생성
+            css_styles = []
+            
+            # 기본 구분선 스타일
+            css_styles.append("margin: 30px 0")
+            css_styles.append("font-size: 18px")
+            css_styles.append("letter-spacing: 8px")
+            
+            # 정렬 스타일 적용
+            if style_info.get('alignment'):
+                align_value = style_info['alignment']
+                if align_value and align_value != "None":
+                    if align_value == "Left":
+                        css_styles.append("text-align: left")
+                    elif align_value == "Center":
+                        css_styles.append("text-align: center")
+                    elif align_value == "Right":
+                        css_styles.append("text-align: right")
+                    elif align_value == "Justify":
+                        css_styles.append("text-align: justify")
+            else:
+                # 기본값으로 가운데 정렬
+                css_styles.append("text-align: center")
+            
+            # 폰트 굵기 적용
+            if style_info.get('weight'):
+                weight = style_info['weight']
+                if weight:
+                    css_styles.append(f"font-weight: {weight}")
+            elif style_info.get('weight_value'):
+                weight_value = style_info['weight_value']
+                if weight_value:
+                    css_styles.append(f"font-weight: {weight_value}")
+            
+            # 폰트 스타일 적용
+            if style_info.get('style'):
+                font_style = style_info['style']
+                if font_style:
+                    css_styles.append(f"font-style: {font_style}")
+            
+            # 색상 적용
+            if style_info.get('color'):
+                color = style_info['color']
+                if color and color != "#000000":  # 기본 검은색이 아닌 경우만
+                    css_styles.append(f"color: {color}")
+            
+            # CSS 스타일 문자열 생성
+            style_string = "; ".join(css_styles)
+            
+            # HTML 구분선 생성
+            divider_html = f'<div class="scene-break" style="{style_string}">{heavy_sparkle_content}</div>'
+            
+            logging.debug(f"Heavy Sparkle 구분선 생성 (인덱스 {index}): {divider_html}")
+            
+            return divider_html
+            
+        except Exception as e:
+            logging.error(f"Heavy Sparkle 구분선 생성 중 오류 발생 (인덱스 {index}): {str(e)}")
+            # 기본 구분선 반환
+            return '<div class="scene-break" style="margin: 30px 0; font-size: 18px; letter-spacing: 8px; text-align: center;">❋ ❋ ❋</div>'
 
     def get_character_style_info(self, index):
         """
@@ -3599,8 +3685,19 @@ p {{
         """백그라운드에서 폰트 호환성 확인을 시작합니다."""
         text_file_path = self.ui.label_TextFilePath.text().strip()
 
-        if not text_file_path or not os.path.exists(text_file_path):
+        logging.debug(f"폰트 검사 요청 - 폰트: {font_path}, 타입: {font_type}")
+        logging.debug(f"텍스트 파일 경로: '{text_file_path}'")
+        logging.debug(f"텍스트 파일 존재 여부: {os.path.exists(text_file_path) if text_file_path else False}")
+
+        # 텍스트 파일 경로가 유효하지 않은 경우 검사 건너뛰기
+        if (not text_file_path or 
+            text_file_path == "..." or 
+            text_file_path == "TextLabel" or 
+            not os.path.exists(text_file_path)):
+            logging.info(f"{font_type} 폰트 검사 건너뜀: 텍스트 파일이 선택되지 않음 (경로: '{text_file_path}')")
             return  # 텍스트 파일이 없으면 검사하지 않음
+
+        logging.info(f"{font_type} 폰트 호환성 검사 시작: {os.path.basename(font_path)}")
 
         # 기존 워커가 실행 중이면 정지
         if self.font_checker_worker and self.font_checker_worker.isRunning():
@@ -4067,6 +4164,9 @@ p {{
                     self.ui.label_BodyFontExample.setText(sample_text)
 
             print(f"[INFO] 본문 폰트 선택: {os.path.basename(font_path)}")
+            
+            # 백그라운드에서 폰트 호환성 확인 (텍스트 파일이 있을 때만)
+            self.start_background_font_check(font_path, "본문 폰트")
 
     def on_chapter_font_changed(self):
         """챕터 폰트가 변경되었을 때 호출됩니다."""
@@ -4095,6 +4195,9 @@ p {{
                     self.ui.label_ChapterFontExample.setText(sample_text)
 
             print(f"[INFO] 챕터 폰트 선택: {os.path.basename(font_path)}")
+            
+            # 백그라운드에서 폰트 호환성 확인 (텍스트 파일이 있을 때만)
+            self.start_background_font_check(font_path, "챕터 폰트")
 
 
 

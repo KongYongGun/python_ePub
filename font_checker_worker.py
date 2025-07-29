@@ -192,9 +192,14 @@ class FontCheckerWorker(QThread):
         used_chars.update(self.author)
 
         if not os.path.exists(self.text_file_path):
+            logging.warning(f"텍스트 파일이 존재하지 않음: {self.text_file_path}")
             return used_chars
 
-        file_size = os.path.getsize(self.text_file_path)
+        try:
+            file_size = os.path.getsize(self.text_file_path)
+        except (OSError, IOError) as e:
+            logging.error(f"텍스트 파일 크기 확인 실패: {self.text_file_path}, 오류: {e}")
+            return used_chars
 
         try:
             # 파일 인코딩 자동 감지
@@ -237,6 +242,10 @@ class FontCheckerWorker(QThread):
 
     def _detect_file_encoding(self):
         """파일의 인코딩을 자동 감지합니다."""
+        if not os.path.exists(self.text_file_path):
+            logging.warning(f"인코딩 감지할 텍스트 파일이 존재하지 않음: {self.text_file_path}")
+            return 'utf-8'
+            
         try:
             with open(self.text_file_path, 'rb') as f:
                 # 더 큰 샘플로 정확성 향상
@@ -260,13 +269,23 @@ class FontCheckerWorker(QThread):
                     return encoding if encoding else 'utf-8'
                 else:
                     return 'utf-8'
-        except Exception:
+        except Exception as e:
+            logging.error(f"파일 인코딩 감지 실패: {self.text_file_path}, 오류: {e}")
             return 'utf-8'
 
     def _sample_characters(self, sample_size, encoding):
         """큰 파일에서 문자 샘플링"""
         used_chars = set()
-        file_size = os.path.getsize(self.text_file_path)
+        
+        if not os.path.exists(self.text_file_path):
+            logging.warning(f"샘플링할 텍스트 파일이 존재하지 않음: {self.text_file_path}")
+            return used_chars
+            
+        try:
+            file_size = os.path.getsize(self.text_file_path)
+        except (OSError, IOError) as e:
+            logging.error(f"샘플링용 파일 크기 확인 실패: {self.text_file_path}, 오류: {e}")
+            return used_chars
 
         try:
             with open(self.text_file_path, 'r', encoding=encoding) as f:
