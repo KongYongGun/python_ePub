@@ -58,20 +58,21 @@ class ChapterFinderWorker(QThread):
         """
         워커 스레드의 메인 실행 함수입니다.
 
-        각 정규식 패턴을 텍스트의 모든 줄에 적용하여 챕터를 검색하고,
-        매치되는 줄을 찾을 때마다 chapter_found 신호를 발생시킵니다.
-        진행률은 progress 신호로, 완료 시에는 finished 신호를 발생시킵니다.
+        텍스트의 각 줄을 순차적으로 검사하여 선택된 모든 정규식 패턴과 매치를 시도합니다.
+        이 방식으로 챕터가 문서에 나타나는 순서대로 정확하게 찾을 수 있습니다.
         
         매칭 처리 방식:
-        1. 각 줄의 앞뒤 공백을 제거 (strip() 사용)
-        2. 공백이 제거된 줄에 대해 정규식 패턴을 줄 시작부터 매칭 (re.match 사용)
-        3. 줄의 중간에서 매치되는 것을 방지하여 정확한 챕터 제목만 인식
+        1. 모든 정규식 패턴을 미리 컴파일
+        2. 각 줄마다 모든 정규식 패턴을 순차적으로 검사
+        3. 첫 번째로 매치되는 패턴을 해당 줄의 챕터로 인식
+        4. 줄의 앞뒤 공백을 제거한 후 줄 시작부터 패턴 매칭
+        5. 챕터 발견 시 즉시 신호 발생으로 문서 순서 보장
 
         Returns:
             None
 
         Emits:
-            chapter_found: 챕터 발견 시 라인 정보
+            chapter_found: 챕터 발견 시 라인 정보 (문서 순서대로)
             progress: 검색 진행률 (20줄마다 업데이트)
             finished: 검색 완료 시 총 발견 챕터 수
         """
@@ -85,38 +86,51 @@ class ChapterFinderWorker(QThread):
                 self.finished.emit(0)
                 return
 
-            # 각 정규식 패턴에 대해 검색 수행
+            # 정규식 패턴들을 미리 컴파일
+            compiled_patterns = []
             for idx, pattern_str in self.patterns:
                 try:
-                    # 정규식 컴파일 시도
                     pattern = re.compile(pattern_str, re.MULTILINE)
                     regex_name = f"정규식 {idx:02}"
-
-                    logging.debug(f"정규식 패턴 적용 중: {regex_name} - {pattern_str}")
-
+                    compiled_patterns.append((idx, pattern, regex_name, pattern_str))
+                    logging.debug(f"정규식 패턴 컴파일 완료: {regex_name} - {pattern_str}")
                 except re.error as e:
                     logging.error(f"잘못된 정규식 패턴 (인덱스 {idx}): {pattern_str} - {e}")
                     continue  # 잘못된 정규식은 건너뛰기
 
-                # 각 줄에 대해 패턴 매치 검사
-                for i, line in enumerate(lines):
-                    # 줄의 앞뒤 공백 제거 (탭, 스페이스 등 모든 공백 문자)
-                    line_stripped = line.strip()
+            if not compiled_patterns:
+                logging.warning("사용 가능한 정규식 패턴이 없습니다.")
+                self.finished.emit(0)
+                return
 
-                    # 빈 줄은 건너뛰기
-                    if not line_stripped:
-                        continue
+            # 각 줄에 대해 모든 정규식 패턴을 순차적으로 검사
+            for i, line in enumerate(lines):
+                # 줄의 앞뒤 공백 제거 (탭, 스페이스 등 모든 공백 문자)
+                line_stripped = line.strip()
 
-                    # 정규식 매치 검사 - 공백이 제거된 줄이 패턴과 줄 시작부터 일치하는지 확인
-                    if pattern.match(line_stripped):
-                        total_found += 1
-                        logging.debug(f"챕터 발견: 라인 {i+1} - 원본: '{line}' -> 처리됨: '{line_stripped[:50]}...'")
-                        self.chapter_found.emit(i + 1, line_stripped, regex_name, pattern_str)
-
-                    # 진행률 업데이트 (20줄마다)
+                # 빈 줄은 건너뛰기
+                if not line_stripped:
+                    # 진행률 업데이트 (빈 줄도 포함하여 계산)
                     if total_lines > 0 and i % 20 == 0:
                         percent = min(int((i / total_lines) * 100), 100)
                         self.progress.emit(percent)
+                    continue
+
+                # 현재 줄에 대해 모든 정규식 패턴 검사
+                chapter_found_in_line = False
+                for idx, pattern, regex_name, pattern_str in compiled_patterns:
+                    # 정규식 매치 검사 - 공백이 제거된 줄이 패턴과 줄 시작부터 일치하는지 확인
+                    if pattern.match(line_stripped):
+                        total_found += 1
+                        logging.debug(f"챕터 발견: 라인 {i+1} - 원본: '{line}' -> 처리됨: '{line_stripped[:50]}...' (패턴: {regex_name})")
+                        self.chapter_found.emit(i + 1, line_stripped, regex_name, pattern_str)
+                        chapter_found_in_line = True
+                        break  # 한 줄에서 첫 번째로 매치된 패턴만 사용
+
+                # 진행률 업데이트 (20줄마다)
+                if total_lines > 0 and i % 20 == 0:
+                    percent = min(int((i / total_lines) * 100), 100)
+                    self.progress.emit(percent)
 
             # 검색 완료
             self.progress.emit(100)
