@@ -1563,6 +1563,29 @@ class MainWindow(QMainWindow):
         for i, chapter in enumerate(chapters, 1):
             manifest_items.append(f'<item id="chapter{i}" href="chapter{i}.xhtml" media-type="application/xhtml+xml"/>')
             spine_items.append(f'<itemref idref="chapter{i}"/>')
+            
+            # 삽화가 있는 경우 삽화 페이지와 이미지를 manifest에 추가
+            if chapter.get('illustration') and os.path.exists(chapter['illustration']):
+                illustration_path = chapter['illustration']
+                _, ext = os.path.splitext(illustration_path)
+                image_filename = f"illustration_{i}{ext}"
+                
+                # 이미지 파일의 MIME 타입 결정
+                if ext.lower() in ['.jpg', '.jpeg']:
+                    image_media_type = "image/jpeg"
+                elif ext.lower() == '.png':
+                    image_media_type = "image/png"
+                elif ext.lower() == '.gif':
+                    image_media_type = "image/gif"
+                elif ext.lower() == '.webp':
+                    image_media_type = "image/webp"
+                else:
+                    image_media_type = "image/jpeg"  # 기본값
+                
+                # 삽화 이미지와 페이지를 manifest에 추가
+                manifest_items.append(f'<item id="illustration-image{i}" href="Images/{image_filename}" media-type="{image_media_type}"/>')
+                manifest_items.append(f'<item id="illustration{i}" href="illustration_{i}.xhtml" media-type="application/xhtml+xml"/>')
+                spine_items.append(f'<itemref idref="illustration{i}"/>')
 
         # 메타데이터에 커버 이미지 정보 추가
         cover_metadata = ""
@@ -1867,7 +1890,8 @@ p {{
             chapters.append({
                 'title': title,
                 'content': self.get_full_text_content(),
-                'order': 1
+                'order': 1,
+                'illustration': None  # 삽화 없음
             })
         else:
             for row in range(table.rowCount()):
@@ -1876,12 +1900,22 @@ p {{
                     order_item = table.item(row, 1)
                     title_item = table.item(row, 2)
                     line_item = table.item(row, 3)
+                    illustration_item = table.item(row, 5)  # 삽화 경로
 
                     if order_item and title_item and line_item:
+                        illustration_path = None
+                        if illustration_item and illustration_item.text().strip():
+                            illustration_path = illustration_item.text().strip()
+                            # 파일 존재 여부 확인
+                            if not os.path.exists(illustration_path):
+                                logging.warning(f"삽화 파일을 찾을 수 없습니다: {illustration_path}")
+                                illustration_path = None
+
                         chapters.append({
                             'title': title_item.text(),
                             'line_no': int(line_item.text()),
-                            'order': int(order_item.text()) if order_item.text() else 999
+                            'order': int(order_item.text()) if order_item.text() else 999,
+                            'illustration': illustration_path
                         })
 
             chapters.sort(key=lambda x: x['order'])
@@ -1980,6 +2014,7 @@ p {{
                 # 챕터 내용에 여백 적용
                 content_with_spacing = self.apply_chapter_spacing(content, spacing_info)
 
+                # 1. 챕터 텍스트 파일 생성
                 chapter_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -1995,6 +2030,10 @@ p {{
 
                 with open(os.path.join(oebps_dir, f"chapter{i}.xhtml"), 'w', encoding='utf-8') as f:
                     f.write(chapter_xhtml)
+
+                # 2. 삽화 페이지 생성 (삽화가 있는 경우)
+                if chapter.get('illustration') and os.path.exists(chapter['illustration']):
+                    self.create_illustration_page(oebps_dir, i, chapter)
 
                 logging.debug(f"챕터 {i} 파일 생성 완료 (문자 스타일링 및 여백 적용)")
 
@@ -2030,21 +2069,70 @@ p {{
                 with open(os.path.join(oebps_dir, f"chapter{i}.xhtml"), 'w', encoding='utf-8') as f:
                     f.write(chapter_xhtml)
 
-                chapter_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
+                # 오류 발생 시에도 삽화 페이지 생성
+                if chapter.get('illustration') and os.path.exists(chapter['illustration']):
+                    self.create_illustration_page(oebps_dir, i, chapter)
+
+    def create_illustration_page(self, oebps_dir, chapter_num, chapter):
+        """챕터 삽화를 위한 별도 페이지를 생성합니다."""
+        try:
+            import shutil
+            
+            illustration_path = chapter['illustration']
+            if not os.path.exists(illustration_path):
+                logging.warning(f"삽화 파일을 찾을 수 없습니다: {illustration_path}")
+                return
+
+            # 이미지 파일 확장자 확인
+            _, ext = os.path.splitext(illustration_path)
+            image_filename = f"illustration_{chapter_num}{ext}"
+            
+            # Images 폴더에 삽화 복사
+            images_dir = os.path.join(oebps_dir, "Images")
+            if not os.path.exists(images_dir):
+                os.makedirs(images_dir)
+            
+            dest_path = os.path.join(images_dir, image_filename)
+            shutil.copy2(illustration_path, dest_path)
+            
+            # 삽화 페이지 XHTML 생성
+            illustration_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <title>{chapter['title']}</title>
+    <title>{chapter['title']} - 삽화</title>
     <link rel="stylesheet" type="text/css" href="Styles/style.css"/>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }}
+        .illustration {{
+            width: 100%;
+            height: auto;
+            max-width: 100%;
+            max-height: 100vh;
+            object-fit: contain;
+        }}
+    </style>
 </head>
 <body>
-    {styled_chapter_title}
-    {content}
+    <div>
+        <img src="Images/{image_filename}" alt="{chapter['title']} 삽화" class="illustration" />
+    </div>
 </body>
 </html>'''
 
-                with open(os.path.join(oebps_dir, f"chapter{i}.xhtml"), 'w', encoding='utf-8') as f:
-                    f.write(chapter_xhtml)
+            # 삽화 페이지 파일 저장
+            illustration_filename = f"illustration_{chapter_num}.xhtml"
+            with open(os.path.join(oebps_dir, illustration_filename), 'w', encoding='utf-8') as f:
+                f.write(illustration_xhtml)
+
+            logging.debug(f"챕터 {chapter_num} 삽화 페이지 생성 완료: {illustration_filename}")
+
+        except Exception as e:
+            logging.error(f"챕터 {chapter_num} 삽화 페이지 생성 실패: {e}")
 
     def copy_images(self, images_dir):
         """선택된 이미지들을 ePub에 복사합니다."""
