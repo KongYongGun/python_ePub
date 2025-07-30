@@ -1109,10 +1109,15 @@ class MainWindow(QMainWindow):
             error_msg = f"필요한 파일을 찾을 수 없습니다: {str(e)}"
             QMessageBox.critical(self, "파일 오류", error_msg)
             logging.error(error_msg)
+        except ValueError as e:
+            # 분할 관련 검증 오류
+            error_msg = f"ePub 분할 설정 오류: {str(e)}"
+            QMessageBox.warning(self, "분할 설정 오류", error_msg)
+            logging.warning(error_msg)
         except Exception as e:
-            error_msg = f"ePub 변환 중 오류가 발생했습니다: {str(e)}"
+            error_msg = f"ePub 변환 중 예상치 못한 오류가 발생했습니다.\n\n오류 내용: {str(e)}\n\n로그 파일을 확인하여 자세한 정보를 확인하세요."
             QMessageBox.critical(self, "변환 실패", error_msg)
-            logging.error(error_msg)
+            logging.error(f"ePub 변환 실패: {e}", exc_info=True)
 
     def validate_epub_requirements(self):
         """
@@ -1221,11 +1226,21 @@ class MainWindow(QMainWindow):
             total_chapters = len(chapters)
             chapters_per_volume = divide_info['chapters_per_volume']
 
+            logging.info(f"분할 설정: 전체 {total_chapters}개 챕터, 권당 {chapters_per_volume}개 챕터")
+
             if total_chapters == 0:
-                raise ValueError("생성할 챕터가 없습니다.")
+                raise ValueError("생성할 챕터가 없습니다. 먼저 '목차 찾기'를 실행하여 챕터를 생성해주세요.")
+
+            if chapters_per_volume <= 0:
+                raise ValueError("권당 챕터 수는 1개 이상이어야 합니다.")
+
+            if chapters_per_volume > total_chapters:
+                logging.warning(f"권당 챕터 수({chapters_per_volume})가 전체 챕터 수({total_chapters})보다 큽니다. 전체 챕터 수로 조정합니다.")
+                chapters_per_volume = total_chapters
 
             # 권 정보 계산
             volume_info = self.calculate_volume_info(total_chapters, chapters_per_volume)
+            logging.info(f"분할 계획: 총 {volume_info['total_volumes']}권 생성")
 
             # 기본 파일명에서 확장자 제거
             base_filename = os.path.splitext(base_save_path)[0]
@@ -1280,31 +1295,49 @@ class MainWindow(QMainWindow):
         """
         try:
             chapters = []
-            row_count = self.ui.tableWidget_Chapter.rowCount()
+            row_count = self.ui.tableWidget_ChapterList.rowCount()
+
+            logging.debug(f"챕터 테이블 행 수: {row_count}")
+
+            if row_count == 0:
+                logging.warning("챕터 테이블이 비어있습니다.")
+                return chapters
 
             for row in range(row_count):
-                # 라인 번호
-                line_item = self.ui.tableWidget_Chapter.item(row, 0)
-                line_no = int(line_item.text()) if line_item else 0
+                try:
+                    # 라인 번호
+                    line_item = self.ui.tableWidget_ChapterList.item(row, 0)
+                    line_no = int(line_item.text()) if line_item else 0
 
-                # 챕터 제목
-                title_item = self.ui.tableWidget_Chapter.item(row, 1)
-                title = title_item.text() if title_item else f"챕터 {row + 1}"
+                    # 챕터 제목
+                    title_item = self.ui.tableWidget_ChapterList.item(row, 1)
+                    title = title_item.text() if title_item else f"챕터 {row + 1}"
 
-                # 챕터 내용 (실제 텍스트에서 추출해야 함)
-                content = self.extract_chapter_content(line_no, row)
+                    # 챕터 내용 (실제 텍스트에서 추출해야 함)
+                    content = self.extract_chapter_content(line_no, row)
 
-                chapters.append({
-                    'line_no': line_no,
-                    'title': title,
-                    'content': content
-                })
+                    chapters.append({
+                        'line_no': line_no,
+                        'title': title,
+                        'content': content
+                    })
 
-            logging.debug(f"챕터 테이블에서 {len(chapters)}개 챕터 정보 추출")
+                    logging.debug(f"챕터 {row + 1} 정보 추출 완료: '{title}' (라인 {line_no})")
+
+                except Exception as e:
+                    logging.error(f"챕터 {row + 1} 정보 추출 실패: {e}")
+                    # 오류가 발생해도 기본 챕터 정보로 계속 진행
+                    chapters.append({
+                        'line_no': row + 1,
+                        'title': f"챕터 {row + 1}",
+                        'content': f"챕터 {row + 1} 내용을 가져올 수 없습니다."
+                    })
+
+            logging.info(f"챕터 테이블에서 {len(chapters)}개 챕터 정보 추출 완료")
             return chapters
 
         except Exception as e:
-            logging.error(f"챕터 정보 추출 실패: {e}")
+            logging.error(f"챕터 정보 추출 중 심각한 오류 발생: {e}")
             return []
 
     def extract_chapter_content(self, start_line, chapter_index):
@@ -1347,8 +1380,8 @@ class MainWindow(QMainWindow):
 
             # 다음 챕터의 시작 라인 찾기
             next_chapter_row = chapter_index + 1
-            if next_chapter_row < self.ui.tableWidget_Chapter.rowCount():
-                next_line_item = self.ui.tableWidget_Chapter.item(next_chapter_row, 0)
+            if next_chapter_row < self.ui.tableWidget_ChapterList.rowCount():
+                next_line_item = self.ui.tableWidget_ChapterList.item(next_chapter_row, 0)
                 if next_line_item:
                     end_idx = max(0, int(next_line_item.text()) - 1)
                 else:
@@ -1384,34 +1417,34 @@ class MainWindow(QMainWindow):
         try:
             # 원본 챕터 정보 백업
             original_chapters = []
-            row_count = self.ui.tableWidget_Chapter.rowCount()
+            row_count = self.ui.tableWidget_ChapterList.rowCount()
 
             for row in range(row_count):
                 row_data = []
-                for col in range(self.ui.tableWidget_Chapter.columnCount()):
-                    item = self.ui.tableWidget_Chapter.item(row, col)
+                for col in range(self.ui.tableWidget_ChapterList.columnCount()):
+                    item = self.ui.tableWidget_ChapterList.item(row, col)
                     row_data.append(item.text() if item else "")
                 original_chapters.append(row_data)
 
             # 테이블 초기화
-            self.ui.tableWidget_Chapter.setRowCount(0)
+            self.ui.tableWidget_ChapterList.setRowCount(0)
 
             # 권별 챕터로 교체
             for idx, chapter in enumerate(volume_chapters):
-                self.ui.tableWidget_Chapter.insertRow(idx)
+                self.ui.tableWidget_ChapterList.insertRow(idx)
 
                 # 라인 번호
                 line_item = QTableWidgetItem(str(chapter['line_no']))
-                self.ui.tableWidget_Chapter.setItem(idx, 0, line_item)
+                self.ui.tableWidget_ChapterList.setItem(idx, 0, line_item)
 
                 # 챕터 제목
                 title_item = QTableWidgetItem(chapter['title'])
-                self.ui.tableWidget_Chapter.setItem(idx, 1, title_item)
+                self.ui.tableWidget_ChapterList.setItem(idx, 1, title_item)
 
                 # 기타 컬럼이 있다면 빈 값으로 설정
-                for col in range(2, self.ui.tableWidget_Chapter.columnCount()):
+                for col in range(2, self.ui.tableWidget_ChapterList.columnCount()):
                     empty_item = QTableWidgetItem("")
-                    self.ui.tableWidget_Chapter.setItem(idx, col, empty_item)
+                    self.ui.tableWidget_ChapterList.setItem(idx, col, empty_item)
 
             logging.debug(f"챕터 테이블 교체 완료: {len(volume_chapters)}개 챕터")
             return original_chapters
@@ -1429,15 +1462,15 @@ class MainWindow(QMainWindow):
         """
         try:
             # 테이블 초기화
-            self.ui.tableWidget_Chapter.setRowCount(0)
+            self.ui.tableWidget_ChapterList.setRowCount(0)
 
             # 원본 챕터 정보 복원
             for idx, row_data in enumerate(original_chapters):
-                self.ui.tableWidget_Chapter.insertRow(idx)
+                self.ui.tableWidget_ChapterList.insertRow(idx)
 
                 for col, data in enumerate(row_data):
                     item = QTableWidgetItem(data)
-                    self.ui.tableWidget_Chapter.setItem(idx, col, item)
+                    self.ui.tableWidget_ChapterList.setItem(idx, col, item)
 
             logging.debug(f"원본 챕터 테이블 복원 완료: {len(original_chapters)}개 챕터")
 

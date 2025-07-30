@@ -44,3 +44,7 @@ temp_epub_*/
 
 # Log files
 *.log
+
+# ePub files and backups
+*.epub
+backup/
